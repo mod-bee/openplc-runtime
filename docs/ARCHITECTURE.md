@@ -280,7 +280,7 @@ openplc-runtime/
 - Runtime started with `start_openplc.sh`
 
 ### Docker Container
-- Official image: `ghcr.io/autonomy-logic/openplc-runtime:latest`
+- Official image: `ghcr.io/mod-bee/openplc-runtime:latest`
 - Multi-architecture support: amd64, arm64, armv7
 - Persistent volume required for `/var/run/runtime`
 - Port 8443 exposed for HTTPS access

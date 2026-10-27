@@ -8,7 +8,7 @@ OpenPLC Runtime v4 provides official Docker images for easy deployment across mu
 
 **Registry:** GitHub Container Registry (GHCR)
 
-**Image:** `ghcr.io/autonomy-logic/openplc-runtime:latest`
+**Image:** `ghcr.io/mod-bee/openplc-runtime:latest`
 
 **Supported Architectures:**
 - `linux/amd64` - x86_64 systems
@@ -22,7 +22,7 @@ still supported and is what the rest of this document covers. On a device you
 intend to keep, prefer the managed install:
 
 ```bash
-curl -fsSL https://runtime.getedge.me | sudo bash
+curl -fsSL https://raw.githubusercontent.com/mod-bee/openplc-runtime/modbee/main/scripts/install-docker.sh | sudo bash
 ```
 
 That installs Docker if needed, then two containers: the runtime, and a
@@ -46,7 +46,7 @@ runtime.
 To remove it:
 
 ```bash
-curl -fsSL https://runtime.getedge.me | sudo bash -s -- --uninstall --yes
+curl -fsSL https://raw.githubusercontent.com/mod-bee/openplc-runtime/modbee/main/scripts/install-docker.sh | sudo bash -s -- --uninstall --yes
 ```
 
 Containers and images go, any displaced systemd runtime comes back, and
@@ -62,7 +62,7 @@ MSYS2 and for targets that cannot run containers.
 ### Pull and Run
 
 ```bash
-docker pull ghcr.io/autonomy-logic/openplc-runtime:latest
+docker pull ghcr.io/mod-bee/openplc-runtime:latest
 
 docker run -d \
   --name openplc-runtime \
@@ -70,7 +70,7 @@ docker run -d \
   --cap-add=SYS_NICE \
   --cap-add=SYS_RESOURCE \
   -v openplc-runtime-data:/var/run/runtime \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 **Note:** The runtime will listen on port 8443 for connections from the OpenPLC Editor. Do not open https://localhost:8443 in a browser - there is no web interface. Connect to it from the OpenPLC Editor desktop application.
@@ -111,7 +111,7 @@ docker run -d \
   --name openplc-runtime \
   -p 8443:8443 \
   -v openplc-runtime-data:/var/run/runtime \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 **Benefits:**
@@ -130,7 +130,7 @@ docker run -d \
   --name openplc-runtime \
   -p 8443:8443 \
   -v /path/to/runtime-data:/var/run/runtime \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 **Benefits:**
@@ -189,7 +189,7 @@ docker run -d \
   -p 8443:8443 \
   -e SQLALCHEMY_DATABASE_URI=sqlite:////var/run/runtime/custom.db \
   -v openplc-runtime-data:/var/run/runtime \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 ### JWT Secret
@@ -218,7 +218,7 @@ docker run -d \
   --privileged \
   -p 8443:8443 \
   -v openplc-runtime-data:/var/run/runtime \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 **Alternative (More Secure):**
@@ -231,7 +231,7 @@ docker run -d \
   --cap-add=SYS_NICE \
   -p 8443:8443 \
   -v openplc-runtime-data:/var/run/runtime \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 **Capabilities:**
@@ -248,7 +248,7 @@ version: '3.8'
 
 services:
   openplc-runtime:
-    image: ghcr.io/autonomy-logic/openplc-runtime:latest
+    image: ghcr.io/mod-bee/openplc-runtime:latest
     container_name: openplc-runtime
     ports:
       - "8443:8443"
@@ -277,7 +277,7 @@ version: '3.8'
 
 services:
   openplc-runtime:
-    image: ghcr.io/autonomy-logic/openplc-runtime:latest
+    image: ghcr.io/mod-bee/openplc-runtime:latest
     container_name: openplc-runtime
     cap_add:
       - SYS_NICE
@@ -317,7 +317,7 @@ volumes:
 Clone the repository and build:
 
 ```bash
-git clone https://github.com/Autonomy-Logic/openplc-runtime.git
+git clone -b modbee/main https://github.com/mod-bee/openplc-runtime.git
 cd openplc-runtime
 git checkout development
 
@@ -368,7 +368,7 @@ Containers use Docker's default bridge network:
 docker run -d \
   --name openplc-runtime \
   -p 8443:8443 \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 ### Host Network
@@ -379,7 +379,7 @@ For direct host network access (Linux only):
 docker run -d \
   --name openplc-runtime \
   --network host \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 **Note:** Port mapping is not needed with host network.
@@ -395,7 +395,7 @@ docker run -d \
   --name openplc-runtime \
   --network openplc-net \
   -p 8443:8443 \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 ## Logging
@@ -425,7 +425,7 @@ Configure log driver in docker-compose.yml:
 ```yaml
 services:
   openplc-runtime:
-    image: ghcr.io/autonomy-logic/openplc-runtime:latest
+    image: ghcr.io/mod-bee/openplc-runtime:latest
     logging:
       driver: "json-file"
       options:
@@ -486,8 +486,8 @@ docker import openplc-container.tar my-openplc-runtime:backup
 Verify image authenticity:
 
 ```bash
-docker pull ghcr.io/autonomy-logic/openplc-runtime:latest
-docker inspect ghcr.io/autonomy-logic/openplc-runtime:latest
+docker pull ghcr.io/mod-bee/openplc-runtime:latest
+docker inspect ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 ### Secrets Management
@@ -578,7 +578,7 @@ Limit container resources:
 ```yaml
 services:
   openplc-runtime:
-    image: ghcr.io/autonomy-logic/openplc-runtime:latest
+    image: ghcr.io/mod-bee/openplc-runtime:latest
     deploy:
       resources:
         limits:
@@ -598,7 +598,7 @@ docker run -d \
   --name openplc-runtime \
   --cpuset-cpus="0,1" \
   -p 8443:8443 \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 ### Memory Optimization
@@ -609,7 +609,7 @@ docker run -d \
   --memory="1g" \
   --memory-swap="2g" \
   -p 8443:8443 \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 ## CI/CD Integration
@@ -652,7 +652,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       openplc:
-        image: ghcr.io/autonomy-logic/openplc-runtime:latest
+        image: ghcr.io/mod-bee/openplc-runtime:latest
         ports:
           - 8443:8443
         volumes:

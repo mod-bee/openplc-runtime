@@ -50,7 +50,7 @@ FROM scratch
 ARG BOOTLOADER_VERSION=dev
 LABEL org.opencontainers.image.title="OpenPLC Runtime Bootloader" \
       org.opencontainers.image.description="Bootloader and update manager for a local OpenPLC runtime" \
-      org.opencontainers.image.source="https://github.com/Autonomy-Logic/openplc-runtime" \
+      org.opencontainers.image.source="https://github.com/mod-bee/openplc-runtime" \
       org.opencontainers.image.version="${BOOTLOADER_VERSION}"
 
 # CA roots for any future outbound HTTPS. Nothing needs them today -- image

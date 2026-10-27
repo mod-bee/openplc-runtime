@@ -23,7 +23,7 @@ This guide covers setting up a development environment for OpenPLC Runtime v4, u
 ### Clone Repository
 
 ```bash
-git clone https://github.com/Autonomy-Logic/openplc-runtime.git
+git clone -b modbee/main https://github.com/mod-bee/openplc-runtime.git
 cd openplc-runtime
 git checkout development
 ```

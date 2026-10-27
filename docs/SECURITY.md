@@ -357,7 +357,7 @@ docker run -v openplc-runtime-data:/var/run/runtime ...
 
 ### Image Security
 
-**Official Image:** `ghcr.io/autonomy-logic/openplc-runtime:latest`
+**Official Image:** `ghcr.io/mod-bee/openplc-runtime:latest`
 
 **Security Features:**
 - Based on Debian bookworm-slim (minimal attack surface)
@@ -367,8 +367,8 @@ docker run -v openplc-runtime-data:/var/run/runtime ...
 
 **Verification:**
 ```bash
-docker pull ghcr.io/autonomy-logic/openplc-runtime:latest
-docker inspect ghcr.io/autonomy-logic/openplc-runtime:latest
+docker pull ghcr.io/mod-bee/openplc-runtime:latest
+docker inspect ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 ## Security Best Practices

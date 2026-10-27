@@ -92,7 +92,7 @@ type Config struct {
 }
 
 const (
-	DefaultRepository     = "ghcr.io/autonomy-logic/openplc-runtime"
+	DefaultRepository     = "ghcr.io/mod-bee/openplc-runtime"
 	DefaultDataDir        = "/var/lib/openplc-runtime"
 	DefaultBootloaderPort = 8445
 

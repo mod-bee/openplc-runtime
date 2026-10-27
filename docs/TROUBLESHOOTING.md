@@ -308,7 +308,7 @@ Failed to load PLC program
 4. Try removing and recreating:
    ```bash
    docker rm -f openplc-runtime
-   docker run -d --name openplc-runtime -p 8443:8443 -v openplc-runtime-data:/var/run/runtime ghcr.io/autonomy-logic/openplc-runtime:latest
+   docker run -d --name openplc-runtime -p 8443:8443 -v openplc-runtime-data:/var/run/runtime ghcr.io/mod-bee/openplc-runtime:latest
    ```
 
 #### Cannot Access Container
@@ -340,12 +340,12 @@ docker run --rm -v openplc-runtime-data:/data alpine chown -R 1000:1000 /data
 **Solution:**
 Use privileged mode or add capabilities:
 ```bash
-docker run -d --name openplc-runtime --privileged -p 8443:8443 -v openplc-runtime-data:/var/run/runtime ghcr.io/autonomy-logic/openplc-runtime:latest
+docker run -d --name openplc-runtime --privileged -p 8443:8443 -v openplc-runtime-data:/var/run/runtime ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 Or:
 ```bash
-docker run -d --name openplc-runtime --cap-add=SYS_NICE -p 8443:8443 -v openplc-runtime-data:/var/run/runtime ghcr.io/autonomy-logic/openplc-runtime:latest
+docker run -d --name openplc-runtime --cap-add=SYS_NICE -p 8443:8443 -v openplc-runtime-data:/var/run/runtime ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 ---

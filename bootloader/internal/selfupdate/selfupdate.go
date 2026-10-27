@@ -37,7 +37,7 @@ const (
 )
 
 // DefaultRepository is where bootloader images live.
-const DefaultRepository = "ghcr.io/autonomy-logic/openplc-runtime-bootloader"
+const DefaultRepository = "ghcr.io/mod-bee/openplc-runtime-bootloader"
 
 // settleDelay is how long the helper waits before removing the parent, so the
 // parent can finish answering the request that started the update and the

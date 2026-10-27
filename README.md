@@ -18,7 +18,7 @@ The runtime executes programs created in the OpenPLC Editor, supporting IEC 6113
 The fastest way to get started:
 
 ```bash
-docker pull ghcr.io/autonomy-logic/openplc-runtime:latest
+docker pull ghcr.io/mod-bee/openplc-runtime:latest
 
 docker run -d \
   --name openplc-runtime \
@@ -26,7 +26,7 @@ docker run -d \
   --cap-add=SYS_NICE \
   --cap-add=SYS_RESOURCE \
   -v openplc-runtime-data:/var/run/runtime \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 ```
 
 The runtime will start and listen on port 8443 for connections from the OpenPLC Editor. **Do not open https://localhost:8443 in a browser** - there is no web interface there as there was on the v3 runtime. Instead, open the OpenPLC Editor desktop application and configure the runtime IP address and credentials to connect.
@@ -38,14 +38,7 @@ The runtime will start and listen on port 8443 for connections from the OpenPLC 
 #### Install (recommended)
 
 ```bash
-curl -fsSL https://runtime.getedge.me | sudo bash
-```
-
-`runtime.getedge.me` serves `scripts/install-docker.sh` verbatim. Until that
-host is published, the same one-liner works against GitHub directly:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Autonomy-Logic/openplc-runtime/main/scripts/install-docker.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/mod-bee/openplc-runtime/modbee/main/scripts/install-docker.sh | sudo bash
 ```
 
 No checkout, no build toolchain, no dependencies to install first. The script
@@ -61,7 +54,7 @@ project carry over.
 To remove it again:
 
 ```bash
-curl -fsSL https://runtime.getedge.me | sudo bash -s -- --uninstall --yes
+curl -fsSL https://raw.githubusercontent.com/mod-bee/openplc-runtime/modbee/main/scripts/install-docker.sh | sudo bash -s -- --uninstall --yes
 ```
 
 That removes the containers and images, puts back any systemd runtime it
@@ -74,7 +67,7 @@ For a native build -- MSYS2, or a target that cannot run containers:
 
 ```bash
 # Clone repository
-git clone https://github.com/Autonomy-Logic/openplc-runtime.git
+git clone -b modbee/main https://github.com/mod-bee/openplc-runtime.git
 cd openplc-runtime
 git checkout development
 
@@ -212,14 +205,14 @@ socket.on('debug_response', (response) => {
 
 ```bash
 # Pull image
-docker pull ghcr.io/autonomy-logic/openplc-runtime:latest
+docker pull ghcr.io/mod-bee/openplc-runtime:latest
 
 # Run with persistent storage
 docker run -d \
   --name openplc-runtime \
   -p 8443:8443 \
   -v openplc-runtime-data:/var/run/runtime \
-  ghcr.io/autonomy-logic/openplc-runtime:latest
+  ghcr.io/mod-bee/openplc-runtime:latest
 
 # View logs
 docker logs -f openplc-runtime
@@ -237,7 +230,7 @@ version: '3.8'
 
 services:
   openplc-runtime:
-    image: ghcr.io/autonomy-logic/openplc-runtime:latest
+    image: ghcr.io/mod-bee/openplc-runtime:latest
     container_name: openplc-runtime
     ports:
       - "8443:8443"
@@ -273,7 +266,7 @@ sudo dnf install gcc gcc-c++ make cmake \
 
 ```bash
 # Clone repository
-git clone https://github.com/Autonomy-Logic/openplc-runtime.git
+git clone -b modbee/main https://github.com/mod-bee/openplc-runtime.git
 cd openplc-runtime
 git checkout development
 
@@ -427,7 +420,7 @@ ls -la /run/runtime/
 ### Setup Development Environment
 
 ```bash
-git clone https://github.com/Autonomy-Logic/openplc-runtime.git
+git clone -b modbee/main https://github.com/mod-bee/openplc-runtime.git
 cd openplc-runtime
 git checkout development
 sudo ./install.sh

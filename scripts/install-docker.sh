@@ -15,8 +15,8 @@ log_error()   { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 # --- defaults ------------------------------------------------------------
 
-RUNTIME_REPOSITORY="${RUNTIME_REPOSITORY:-ghcr.io/autonomy-logic/openplc-runtime}"
-BOOTLOADER_REPOSITORY="${BOOTLOADER_REPOSITORY:-ghcr.io/autonomy-logic/openplc-runtime-bootloader}"
+RUNTIME_REPOSITORY="${RUNTIME_REPOSITORY:-ghcr.io/mod-bee/openplc-runtime}"
+BOOTLOADER_REPOSITORY="${BOOTLOADER_REPOSITORY:-ghcr.io/mod-bee/openplc-runtime-bootloader}"
 RUNTIME_VERSION="${RUNTIME_VERSION:-}"
 BOOTLOADER_VERSION="${BOOTLOADER_VERSION:-latest}"
 
@@ -40,8 +40,8 @@ declare -a DISPLACED_THIS_RUN=()
 
 # Source for the piped one-liner. OPENPLC_INSTALLER_URL overrides for
 # forks or internal mirrors.
-INSTALLER_URL="${OPENPLC_INSTALLER_URL:-https://runtime.getedge.me}"
-INSTALLER_URL_FALLBACK="https://raw.githubusercontent.com/Autonomy-Logic/openplc-runtime/main/scripts/install-docker.sh"
+INSTALLER_URL="${OPENPLC_INSTALLER_URL:-https://raw.githubusercontent.com/mod-bee/openplc-runtime/modbee/main/scripts/install-docker.sh}"
+INSTALLER_URL_FALLBACK="https://raw.githubusercontent.com/mod-bee/openplc-runtime/modbee/main/scripts/install-docker.sh"
 
 MODE=install
 ASSUME_YES=false
@@ -62,8 +62,8 @@ usage() {
 OpenPLC Runtime installer (container edition)
 
 Usage:
-  curl -fsSL https://runtime.getedge.me | sudo bash
-  curl -fsSL https://runtime.getedge.me | sudo bash -s -- --uninstall --yes
+  curl -fsSL https://raw.githubusercontent.com/mod-bee/openplc-runtime/modbee/main/scripts/install-docker.sh | sudo bash
+  curl -fsSL https://raw.githubusercontent.com/mod-bee/openplc-runtime/modbee/main/scripts/install-docker.sh | sudo bash -s -- --uninstall --yes
   sudo ./install.sh [options]
 
 Install options:
