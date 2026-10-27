@@ -9,6 +9,10 @@
  * file owns the buffer and the call sites.
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "plc_retain.h"
 
 #include <atomic>
