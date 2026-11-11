@@ -747,6 +747,14 @@ void *plc_cycle_thread(void *arg)
      * located-variable binding and journal_init() (restores go through the
      * journal) and before the first task is released, so scan 1 sees them. */
     plc_retain_init();
+    /* Seed the image with the ctor-initialised value of every located leaf
+     * before plc_retain_read overrides retained slots on top -- without this
+     * seed, copy_in on the first scan reads the calloc'd zero back into every
+     * member and the declared `:= <literal>` never reaches the outside.
+     * (upstream f233bc9; it runs before either restart path below: a cold
+     * restart stores these initial values, a warm one restores on top.) */
+    image_tables_seed_image_from_members();
+
     if (g_this_start_cold)
     {
         /* Cold restart (IEC 61131-3 Figure 9 rule 4): skip the restore and
