@@ -554,8 +554,18 @@ int journal_force_clear(journal_buffer_type_t type, uint16_t index, uint8_t bit)
 /* Release every forced slot. Under image_lock, like the two above. */
 void journal_force_clear_all(void)
 {
-    memset(g_forced, 0, sizeof(g_forced));
+    /* THE ROWS, NOT THE ROW POINTERS. g_forced was once a fixed [type][1024]
+     * byte array, where memset(g_forced, 0, sizeof g_forced) cleared every
+     * slot. It is now fourteen heap rows sized from the image (force_map_alloc),
+     * and the same memset nulled the pointers instead -- leaking the rows and
+     * leaving g_force_size up, so the next journal_force_set indexed NULL and
+     * the dispatcher died with SIGSEGV (a cold restart, then any located force). */
     g_force_count = 0;
+    for (int t = 0; t < JOURNAL_TYPE_COUNT; t++)
+    {
+        if (g_forced[t] != NULL && g_force_size > 0)
+            memset(g_forced[t], 0, g_force_size);
+    }
 }
 
 #if JOURNAL_LOCKFREE
