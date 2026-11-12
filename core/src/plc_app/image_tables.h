@@ -277,6 +277,8 @@ extern "C"
     /* 1 = a stuck scan of the task stops the PLC, 0 = it is reported and the PLC
      * keeps running ({STOP_ON_STUCK := b}); NULL when no task has the setting. */
     extern int32_t  (*ext_strucpp_task_stop_on_stuck)(uint32_t resource, uint32_t task);
+    /* {RESTART_ON_FAULT := n}: seconds after a fault before the task is recovered; absent = 0 (stays stopped). */
+    extern uint32_t (*ext_strucpp_task_restart_on_fault)(uint32_t resource, uint32_t task);
     /* The task's stack in bytes ({STACK := n}), 0 = default; NULL when no task has one. */
     extern uint32_t (*ext_strucpp_task_stack)(uint32_t resource, uint32_t task);
     extern uint8_t  (*ext_strucpp_retain_unpack2)   (const uint8_t *blob, size_t len,

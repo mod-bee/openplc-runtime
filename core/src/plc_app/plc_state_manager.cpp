@@ -163,9 +163,75 @@ static struct
     uint8_t  count;
 } g_fault = {PLC_FAULT_NONE, -1, "", 0, false, 0};
 
+
+/* ---- Recovery after a fault ({RESTART_ON_FAULT := n}, ModBee; task_policy.h) ----
+ * The delays are kept apart from plc_tasks[], which a stop frees: a recovery is
+ * due when the PLC may have no tasks at all. The count lives in PLC_RECOVER_FILE
+ * so it survives the runtime's own restarts (the runtime manager uses it for a
+ * watchdog exit). */
+#define RECOVER_TASKS 64
+static uint32_t             g_recover_s[RECOVER_TASKS];
+static uint32_t             g_recover_any_s = 0;
+static std::atomic<uint8_t> g_recover_kind{PLC_RECOVER_NONE};
+static int                  g_recover_task  = -1;
+static bool                 g_recover_stuck = false;
+static int64_t              g_recover_due_ms = 0;
+
+static int64_t recover_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/* PLC_RECOVER_FILE: "after=<s> count=<n> since=<epoch s>"; missing fields are 0. */
+static void recover_file_read(uint32_t *after, uint32_t *count, int64_t *since)
+{
+    *after = 0; *count = 0; *since = 0;
+    FILE *f = std::fopen(PLC_RECOVER_FILE, "r");
+    if (!f) return;
+    unsigned a = 0, c = 0; long long s = 0;
+    if (std::fscanf(f, "after=%u count=%u since=%lld", &a, &c, &s) >= 1)
+    {
+        *after = a; *count = c; *since = s;
+    }
+    std::fclose(f);
+}
+
+static void recover_file_write(uint32_t after, uint32_t count, int64_t since)
+{
+    FILE *f = std::fopen(PLC_RECOVER_FILE ".tmp", "w");
+    if (!f) return;
+    std::fprintf(f, "after=%u count=%u since=%lld\n", after, count, (long long)since);
+    std::fclose(f);
+    std::rename(PLC_RECOVER_FILE ".tmp", PLC_RECOVER_FILE);
+}
+
+static uint32_t recover_delay_s(int task)
+{
+    return (task >= 0 && task < RECOVER_TASKS) ? g_recover_s[task] : g_recover_any_s;
+}
+
+/* Called with the fault lock held, from plc_fault_record(). */
+static void recover_note_fault(uint8_t code, int task)
+{
+    uint8_t wanted = PLC_RECOVER_NONE;
+    bool stuck = false;
+    if (code == PLC_FAULT_TASK_ENDED) wanted = PLC_RECOVER_RESUME;
+    else if (code == PLC_FAULT_TASK_STUCK) wanted = PLC_RECOVER_RESTART;
+    else if (code == PLC_FAULT_TASK_STUCK_RUNNING) { wanted = PLC_RECOVER_RESUME; stuck = true; }
+    if (!plc_recover_replaces(g_recover_kind.load(std::memory_order_acquire), wanted, recover_delay_s(task)))
+        return;
+    g_recover_task   = task;
+    g_recover_stuck  = stuck;
+    g_recover_due_ms = recover_now_ms() + (int64_t)recover_delay_s(task) * 1000;
+    g_recover_kind.store(wanted, std::memory_order_release);
+}
+
 void plc_fault_record(uint8_t code, int task, const char *task_name, uint32_t detail, bool safe_mode)
 {
     std::lock_guard<std::mutex> guard(g_fault_lock);
+    recover_note_fault(code, task);
     /* A stuck task kept running (Stop PLC if stuck: No) is reported only; any later
      * fault takes its place, so the status always says why the PLC stopped. */
     if (g_fault.code == PLC_FAULT_NONE ||
@@ -951,6 +1017,12 @@ void *plc_cycle_thread(void *arg)
                                                : 0;
                     bool refused = false;
                     ctx->stack_bytes = plc_task_stack_bytes(stack, sysconf(_SC_PAGESIZE), &refused);
+                    /* {RESTART_ON_FAULT := n}: recovered n s after a fault (task_policy.h). */
+                    const uint32_t after = ext_strucpp_task_restart_on_fault
+                                               ? ext_strucpp_task_restart_on_fault((uint32_t)r, (uint32_t)t)
+                                               : 0;
+                    if (flat_idx < RECOVER_TASKS) g_recover_s[flat_idx] = after;
+                    if (after > g_recover_any_s) g_recover_any_s = after;
                     if (refused)
                     {
                         log_warn("[task %s] stack %u bytes is outside %u..%u: running on the default stack",
@@ -998,6 +1070,14 @@ void *plc_cycle_thread(void *arg)
         }
     }
 
+    {
+        /* The program's longest restart delay, for the runtime manager (a watchdog
+         * exit is recovered by starting the runtime normally, not in safe mode). */
+        uint32_t after = 0, count = 0;
+        int64_t since = 0;
+        recover_file_read(&after, &count, &since);
+        recover_file_write(g_recover_any_s, count, since);
+    }
     {
         int64_t longest = 0;
         for (size_t i = 0; i < plc_task_count; ++i)
@@ -1974,4 +2054,38 @@ extern "C" void plc_force_error_state(void)
 extern "C" int plc_get_crash_signal(void)
 {
     return (int)plc_crash_signal;
+}
+
+/* A recovery that has come due (RESTART_ON_FAULT): what plc_main's loop should
+ * do now - PLC_RECOVER_NONE, PLC_RECOVER_RESTART (a RUN from ERROR) or
+ * PLC_RECOVER_RESUME (STOP, then RUN, so the ended or stuck task's thread is
+ * made again). Counted here, at most PLC_RECOVER_LIMIT a day. */
+extern "C" uint8_t plc_recover_poll(void)
+{
+    const uint8_t kind = g_recover_kind.load(std::memory_order_acquire);
+    if (kind == PLC_RECOVER_NONE || recover_now_ms() < g_recover_due_ms) return PLC_RECOVER_NONE;
+    g_recover_kind.store(PLC_RECOVER_NONE, std::memory_order_release);
+
+    bool still_stuck = plc_get_state() == PLC_STATE_ERROR;
+    plc_tasks_reader_lock();
+    if (g_recover_task >= 0 && plc_tasks && (size_t)g_recover_task < plc_task_count)
+        still_stuck = still_stuck || plc_tasks[g_recover_task].stuck_running.load() != 0;
+    plc_tasks_reader_unlock();
+
+    uint32_t after = 0, count = 0;
+    int64_t since = 0;
+    recover_file_read(&after, &count, &since);
+    const int64_t now_s = (int64_t)std::time(nullptr);
+    if (count != 0 && plc_recover_clears(now_s, since)) count = 0;
+    const uint8_t act = plc_recover_action(kind, count, g_recover_stuck, still_stuck);
+    if (act == PLC_RECOVER_NONE)
+    {
+        if (count >= PLC_RECOVER_LIMIT)
+            log_error("Fault recovery: %u recoveries already today - the PLC stays as the fault left it", count);
+        return PLC_RECOVER_NONE;
+    }
+    recover_file_write(g_recover_any_s, count + 1, count == 0 ? now_s : since);
+    log_warn("Fault recovery %u of %u: %s", count + 1, PLC_RECOVER_LIMIT,
+             plc_get_state() == PLC_STATE_ERROR ? "the PLC is started again" : "the PLC is stopped and started again");
+    return plc_get_state() == PLC_STATE_ERROR ? PLC_RECOVER_RESTART : PLC_RECOVER_RESUME;
 }

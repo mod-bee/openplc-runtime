@@ -20,6 +20,7 @@
 #include "image_tables.h"
 #include "plc_boot.h"
 #include "plc_state_manager.h"
+#include "plc_switch.h"
 #include "plcapp_manager.h"
 #include "task_policy.h"
 #include "unix_socket.h"
@@ -256,10 +257,32 @@ int main(int argc, char *argv[])
     // it reads the RUN default only when no plugin owns a switch.
     plc_boot_autostart(safe_mode);
 
+    // The main thread sleeps - and carries out a fault recovery that has come
+    // due (RESTART_ON_FAULT): a RUN from ERROR, or STOP then RUN for a task a
+    // runtime error ended or one stuck and kept running. Through the same gate
+    // as a START command, so the mode switch and every refusal still apply.
+    bool recover_run_after_stop = false;
     while (keep_running)
     {
-        // Sleep forever in the main thread
         sleep(1);
+        const uint8_t recover = plc_recover_poll();
+        if (recover != PLC_RECOVER_NONE && !plc_switch_allows_run())
+        {
+            log_warn("Fault recovery: the mode switch is in STOP - not started");
+        }
+        else if (recover == PLC_RECOVER_RESTART)
+        {
+            plc_begin_transition(PLC_STATE_RUNNING);
+        }
+        else if (recover == PLC_RECOVER_RESUME)
+        {
+            recover_run_after_stop = plc_begin_transition(PLC_STATE_STOPPED);
+        }
+        if (recover_run_after_stop && plc_get_state() == PLC_STATE_STOPPED)
+        {
+            recover_run_after_stop = false;
+            plc_begin_transition(PLC_STATE_RUNNING);
+        }
     }
 
     log_info("Shutting down...");

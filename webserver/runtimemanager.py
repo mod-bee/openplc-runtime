@@ -234,11 +234,58 @@ class RuntimeManager:
             return self.process.poll()
         return None
 
+    # RESTART_ON_FAULT (the program's tasks; core/src/plc_app/task_policy.h): the
+    # runtime writes the program's longest restart delay and the recoveries so
+    # far to this file; a watchdog exit is then recovered by starting the runtime
+    # normally after that delay, at most RECOVER_LIMIT times a day, instead of in
+    # safe mode. Without the setting (after=0), safe mode as always.
+    RECOVER_FILE = "/run/runtime/recover"
+    RECOVER_LIMIT = 3
+    RECOVER_CLEAR_S = 24 * 3600
+
+    def _recover_after_watchdog(self) -> bool:
+        """Start the runtime normally after a watchdog exit when the program asks to be recovered."""
+        try:
+            with open(self.RECOVER_FILE, encoding="ascii") as f:
+                fields = dict(part.split("=", 1) for part in f.read().split() if "=" in part)
+            after = int(fields.get("after", "0"))
+            count = int(fields.get("count", "0"))
+            since = int(fields.get("since", "0"))
+        except (OSError, ValueError):
+            return False
+        if after <= 0:
+            return False
+        now = int(time.time())
+        if count and now - since >= self.RECOVER_CLEAR_S:
+            count = 0
+        if count >= self.RECOVER_LIMIT:
+            logger.error("Fault recovery: %d recoveries already today - safe mode", count)
+            return False
+        try:
+            with open(self.RECOVER_FILE + ".tmp", "w", encoding="ascii") as f:
+                f.write(f"after={after} count={count + 1} since={since if count else now}\n")
+            os.replace(self.RECOVER_FILE + ".tmp", self.RECOVER_FILE)
+        except OSError:
+            return False
+        logger.error(
+            "PLC runtime exited after a watchdog fault. Fault recovery %d of %d: "
+            "starting it normally in %d s (RESTART_ON_FAULT) instead of in safe mode.",
+            count + 1, self.RECOVER_LIMIT, after,
+        )
+        time.sleep(after)
+        with self._crash_lock:
+            self._safe_mode = False
+        self._start_runtime_process(safe_mode=False)
+        return True
+
     def _handle_runtime_exit(self) -> None:
         """Restart a runtime that exited: safe mode on a watchdog fault or repeated crashes."""
         exit_code = self._runtime_exit_code()
         self._safe_stop_log_server()
         self._safe_close_runtime_socket()
+
+        if exit_code == RUNTIME_EXIT_WATCHDOG_FAULT and self._recover_after_watchdog():
+            return
 
         if exit_code == RUNTIME_EXIT_WATCHDOG_FAULT:
             logger.error(

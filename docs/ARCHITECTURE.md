@@ -207,6 +207,18 @@ defaults of the constants in `core/src/plc_app/task_policy.h`.
    If that step itself hangs, the next exit records it in the marker and the
    following boot skips it, relying on the hardware safe-state watchdog.
 
+   A task whose **On fault** is Restart (`TASK t(...) {RESTART_ON_FAULT := n};`,
+   `strucpp_task_restart_on_fault()`; ModBee) is recovered n seconds after a
+   fault instead of staying stopped until started: an ended task or one stuck
+   and kept running by STOP -> RUN (its thread made again), a PLC its stuck
+   scan stopped in ERROR by RUN - both from `plc_main`'s loop through
+   `plc_begin_transition`, so the mode switch still applies - and a watchdog
+   exit by the runtime manager starting the runtime normally instead of in
+   safe mode. At most `PLC_RECOVER_LIMIT` (3) a day, counted in
+   `PLC_RECOVER_FILE` (`/run/runtime/recover`: the program's longest delay and
+   the count, shared with the runtime manager); past it the PLC stays as the
+   fault left it. Rules: `plc_recover_*` in `task_policy.h`.
+
 All runtime mutexes that can take it use `PTHREAD_PRIO_INHERIT`, and state reads
 are lock free, so a starved normal-priority thread cannot block the dispatcher or
 the watchdog on a single CPU.

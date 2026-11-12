@@ -89,6 +89,21 @@ int main()
           "past 64 MB -> default, refused");
     CHECK(plc_task_stack_bytes(65537, 0, nullptr) == 69632, "page size unknown -> 4096; NULL flag accepted");
 
+    // RESTART_ON_FAULT (strucpp_task_restart_on_fault()): a fault of a task with
+    // the setting is recovered that long after, at most PLC_RECOVER_LIMIT times
+    // until a day passes without one; without it nothing changes.
+    std::printf("task_policy: fault recovery\n");
+    CHECK(!plc_recover_replaces(PLC_RECOVER_NONE, PLC_RECOVER_RESTART, 0), "no setting -> stays stopped, as always");
+    CHECK(plc_recover_replaces(PLC_RECOVER_NONE, PLC_RECOVER_RESUME, 30), "a task with it -> a resume scheduled");
+    CHECK(plc_recover_replaces(PLC_RECOVER_RESUME, PLC_RECOVER_RESTART, 30), "a restart overrides a resume");
+    CHECK(!plc_recover_replaces(PLC_RECOVER_RESTART, PLC_RECOVER_RESUME, 30), "never the other way");
+    CHECK(plc_recover_action(PLC_RECOVER_RESTART, 2, false, true) == PLC_RECOVER_RESTART, "within the limit -> done");
+    CHECK(plc_recover_action(PLC_RECOVER_RESTART, 3, false, true) == PLC_RECOVER_NONE, "the limit -> stays (no loop)");
+    CHECK(plc_recover_action(PLC_RECOVER_RESUME, 0, true, false) == PLC_RECOVER_NONE,
+          "a stuck task that finished its scan since -> nothing");
+    CHECK(!plc_recover_clears(PLC_RECOVER_CLEAR_S - 1, 0), "under a day -> the count holds");
+    CHECK(plc_recover_clears(PLC_RECOVER_CLEAR_S, 0), "a day -> the count starts again");
+
     if (g_failures == 0)
         std::printf("all cases passed\n");
     return g_failures == 0 ? 0 : 1;

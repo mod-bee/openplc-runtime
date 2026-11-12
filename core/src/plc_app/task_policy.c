@@ -58,3 +58,22 @@ size_t plc_task_stack_bytes(uint32_t requested, long page, bool *refused)
     const size_t p = page > 0 ? (size_t)page : 4096u;
     return (((size_t)requested + p - 1) / p) * p;
 }
+
+bool plc_recover_replaces(uint8_t pending, uint8_t wanted, uint32_t delay_s)
+{
+    return delay_s != 0 && wanted != PLC_RECOVER_NONE && wanted > pending;
+}
+
+uint8_t plc_recover_action(uint8_t pending, uint32_t done, bool was_stuck, bool still_stuck)
+{
+    if (pending == PLC_RECOVER_NONE || done >= PLC_RECOVER_LIMIT)
+        return PLC_RECOVER_NONE;
+    if (was_stuck && !still_stuck)
+        return PLC_RECOVER_NONE;
+    return pending;
+}
+
+bool plc_recover_clears(int64_t now_s, int64_t since_s)
+{
+    return now_s - since_s >= PLC_RECOVER_CLEAR_S;
+}

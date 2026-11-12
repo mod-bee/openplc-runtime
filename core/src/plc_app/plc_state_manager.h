@@ -254,6 +254,9 @@ void plc_force_error_state(void);
 /* Keep the first fault since the last start, and count every one. `task` is the
  * task's index, or -1; `task_name` may be NULL. */
 void plc_fault_record(uint8_t code, int task, const char *task_name, uint32_t detail, bool safe_mode);
+/* RESTART_ON_FAULT: a recovery that has come due (task_policy.h PLC_RECOVER_*);
+ * plc_main's loop polls it every second and starts the transition. */
+uint8_t plc_recover_poll(void);
 /* Cleared when the PLC starts. */
 void plc_fault_clear(void);
 /* {"code":..,"kind":"..","task":..,"taskName":"..","safeMode":..,"count":..,"detail":..}; bytes written. */

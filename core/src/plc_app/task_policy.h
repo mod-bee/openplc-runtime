@@ -162,6 +162,35 @@ extern "C"
      */
     size_t plc_task_stack_bytes(uint32_t requested, long page, bool *refused);
 
+/* Recovery after a fault ({RESTART_ON_FAULT := n}, exported as
+ * strucpp_task_restart_on_fault(); ModBee). A task given the setting is
+ * recovered n seconds after a fault instead of staying stopped until started:
+ * a task a runtime error ended, or one stuck and kept running, by a STOP -> RUN
+ * (its thread recreated); a PLC a stuck task stopped in ERROR by a RUN; a
+ * watchdog exit by the runtime manager starting the runtime normally instead of
+ * in safe mode. At most PLC_RECOVER_LIMIT recoveries until PLC_RECOVER_CLEAR_S
+ * pass without one; past it the PLC stays as the fault left it, so a fault that
+ * comes straight back cannot loop. The firmware (plc_core_place.h) applies the
+ * same rules. PLC_RECOVER_FILE carries them across the runtime's own restarts:
+ * "after=<s> count=<n> since=<epoch s>" (the runtime manager reads it too). */
+#define PLC_RECOVER_NONE    0
+#define PLC_RECOVER_RESUME  1   /* the task again (here: STOP -> RUN) */
+#define PLC_RECOVER_RESTART 2   /* the PLC again (ERROR -> RUN) */
+#define PLC_RECOVER_LIMIT   3u
+#define PLC_RECOVER_CLEAR_S (24LL * 3600LL)
+#define PLC_RECOVER_FILE    "/run/runtime/recover"
+
+    /** Whether a new fault's recovery takes the place of the one pending: a
+     *  restart overrides a resume, never the other way; delay 0 = no setting. */
+    bool plc_recover_replaces(uint8_t pending, uint8_t wanted, uint32_t delay_s);
+
+    /** What a recovery that has come due does: NONE when the count is used up,
+     *  or when it was for a stuck task that has finished its scan since. */
+    uint8_t plc_recover_action(uint8_t pending, uint32_t done, bool was_stuck, bool still_stuck);
+
+    /** Whether the count starts again: PLC_RECOVER_CLEAR_S since `since_s`. */
+    bool plc_recover_clears(int64_t now_s, int64_t since_s);
+
 #ifdef __cplusplus
 }
 #endif
