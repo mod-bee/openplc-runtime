@@ -77,3 +77,8 @@ bool plc_recover_clears(int64_t now_s, int64_t since_s)
 {
     return now_s - since_s >= PLC_RECOVER_CLEAR_S;
 }
+
+bool plc_task_skip_is_counted(bool first_scan_done)
+{
+    return first_scan_done;
+}

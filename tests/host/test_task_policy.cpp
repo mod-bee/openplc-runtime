@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Autonomy®
 
-// Host test: IEC TASK priority to SCHED_FIFO mapping.
-
 #include "task_policy.h"
 
 #include <cstdio>
+#include <type_traits>
 
 static int g_failures = 0;
 
@@ -103,6 +102,12 @@ int main()
           "a stuck task that finished its scan since -> nothing");
     CHECK(!plc_recover_clears(PLC_RECOVER_CLEAR_S - 1, 0), "under a day -> the count holds");
     CHECK(plc_recover_clears(PLC_RECOVER_CLEAR_S, 0), "a day -> the count starts again");
+
+    std::printf("task_policy: busy-tick accounting\n");
+    CHECK((std::is_same<decltype(&plc_task_skip_is_counted), bool (*)(bool)>::value),
+          "skip policy takes the first-scan-done flag, not a scan counter");
+    CHECK(!plc_task_skip_is_counted(false), "skip before the first scan is done is not counted");
+    CHECK(plc_task_skip_is_counted(true), "skip after the first scan is done is counted");
 
     if (g_failures == 0)
         std::printf("all cases passed\n");
