@@ -7,6 +7,7 @@
  * the call frame is silently corrupted. */
 
 #include "debug_handler_mocks.h"
+#include "debug_text.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -24,6 +25,8 @@ uint8_t  (*ext_strucpp_debug_set)        (uint8_t, uint16_t, bool,
 uint16_t (*ext_strucpp_debug_read)       (uint8_t, uint16_t, uint8_t *)  = NULL;
 uint8_t  (*ext_strucpp_debug_write)      (uint8_t, uint16_t,
                                           const uint8_t *, uint16_t)     = NULL;
+/* NULL: a program without FC 0x4F; tests/host/test_debug_text.c covers it. */
+plc_debug_read_text_func_t ext_strucpp_debug_read_text                  = NULL;
 
 /* ext_strucpp_program_md5, scan_counter and runtime_external_write are DEFINED
  * here, not just declared.

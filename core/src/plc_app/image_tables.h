@@ -4,6 +4,7 @@
 #ifndef IMAGE_TABLES_H
 #define IMAGE_TABLES_H
 
+#include "debug_text.h"
 #include "image_table_id.h"
 #include <pthread.h>
 #include <stdbool.h>
@@ -241,6 +242,9 @@ extern "C"
                                                      uint16_t len);
     extern uint16_t (*ext_strucpp_debug_read)       (uint8_t arr, uint16_t elem,
                                                      uint8_t *dest);
+    /* Chunked STRING/WSTRING read for FC 0x4F. Optional: NULL for a program
+     * built before it, and FC 0x4F then answers 0x83. */
+    extern plc_debug_read_text_func_t ext_strucpp_debug_read_text;
     /* Soft write via IECVar::set(). Silently ignored if the variable
      * is forced (force wins). Distinct from debug_set(forcing=true). */
     extern uint8_t  (*ext_strucpp_debug_write)      (uint8_t arr, uint16_t elem,

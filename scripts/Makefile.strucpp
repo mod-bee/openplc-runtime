@@ -23,6 +23,8 @@ GENERATED_DIR := core/generated
 RUNTIME_INC   := $(GENERATED_DIR)/strucpp_runtime/include
 PYTHON_INC    := core/src/plc_app/include
 RUNTIME_SHIM  := core/strucpp_runtime/runtime_v4_entry.cpp
+# Runtime-repo headers the shim includes, so an edit to one rebuilds it.
+RUNTIME_SHIM_HDRS := core/strucpp_runtime/retain_live_read.hpp core/src/plc_app/debug_text.h
 RETAIN_PROBE  := core/strucpp_runtime/retain_probe.cpp
 PYTHON_LOADER := core/src/plc_app/python_loader.c
 BUILD_DIR     := build
@@ -304,7 +306,7 @@ $(BUILD_DIR)/%.o: $(GENERATED_DIR)/%.c | $(BUILD_DIR)
 # between uploads (a device whose editor was upgraded past STruC++ v0.6.5):
 # every upload rewrites defines.h, so the shim recompiles and picks up the new
 # SHIM_CXXFLAGS rather than keeping an object built under the old verdict.
-$(SHIM_OBJ): $(RUNTIME_SHIM) $(GENERATED_DIR)/generated.hpp $(GENERATED_DIR)/defines.h | $(BUILD_DIR)
+$(SHIM_OBJ): $(RUNTIME_SHIM) $(RUNTIME_SHIM_HDRS) $(GENERATED_DIR)/generated.hpp $(GENERATED_DIR)/defines.h | $(BUILD_DIR)
 	@echo "[INFO] Compiling runtime_v4_entry.cpp..."
 ifeq ($(SHIM_HAS_RETAIN),)
 	@echo "[INFO] RETAIN: this program's STruC++ runtime headers predate retain support"

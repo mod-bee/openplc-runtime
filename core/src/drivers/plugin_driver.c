@@ -113,6 +113,20 @@ static uint16_t plugin_debug_read(uint8_t arr, uint16_t elem, uint8_t *dest)
     return ext_strucpp_debug_read ? ext_strucpp_debug_read(arr, elem, dest) : 0;
 }
 
+static uint8_t plugin_debug_read_text(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max,
+                                      uint8_t *data, uint16_t data_cap, plc_text_chunk_t *info)
+{
+    plc_debug_read_text_func_t fn = ext_strucpp_debug_read_text;
+    if (fn && ext_strucpp_debug_array_count)
+        return fn(arr, elem, offset, max, data, data_cap, info);
+    if (info)
+    {
+        memset(info, 0, sizeof(*info));
+        info->status = 0x83; // no program, or one built without it
+    }
+    return 0x83;
+}
+
 // debug_set/debug_write run on PLUGIN threads. ENQUEUE through the
 // debug-write journal; dispatcher applies at the no-task-running window.
 // Returns 0x7E ok, 0x82 queue full, 0x81 no program.
@@ -1177,6 +1191,7 @@ void *generate_structured_args_with_driver(plugin_type_t type, plugin_driver_t *
     args->request_plc_start   = plugin_request_plc_start;
     args->set_switch_position = plugin_set_switch_position;
     args->get_plc_state       = plugin_get_plc_state;
+    args->debug_read_text     = plugin_debug_read_text;
 
     // PLC base tick time. Runtime owns base_tick_ns; on first plugin init
     // (before symbols_init) it carries the 20 ms default, so plugins must

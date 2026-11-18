@@ -17,12 +17,33 @@
 // same gate so older header sets are never asked for it.
 #ifdef STRUCPP_SHIM_HAS_RETAIN
 #include "iec_retain.hpp"    // retain blob format + pack/unpack
+#include "retain_live_read.hpp"
 #endif
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <pthread.h>
+
+// FC 0x4F (chunked STRING/WSTRING read): debug_dispatch.hpp exports
+// strucpp_debug_read_text and defines STRUCPP_SHIM_HAS_DEBUG_TEXT. Its chunk
+// struct and signature are held here to the runtime's C mirror; with older
+// headers the symbol is absent and the runtime answers FC 0x4F with 0x83.
+#ifdef STRUCPP_SHIM_HAS_DEBUG_TEXT
+#include "../src/plc_app/debug_text.h"
+
+static_assert(sizeof(strucpp_text_chunk) == PLC_TEXT_CHUNK_SIZE, "strucpp_text_chunk size");
+static_assert(offsetof(strucpp_text_chunk, cap) == PLC_TEXT_CHUNK_OFFSET_CAP, "cap offset");
+static_assert(offsetof(strucpp_text_chunk, len) == PLC_TEXT_CHUNK_OFFSET_LEN, "len offset");
+static_assert(offsetof(strucpp_text_chunk, count) == PLC_TEXT_CHUNK_OFFSET_COUNT, "count offset");
+static_assert(strucpp::debug::TAG_STRING == PLC_TEXT_TAG_STRING, "TAG_STRING");
+static_assert(strucpp::debug::TAG_WSTRING == PLC_TEXT_TAG_WSTRING, "TAG_WSTRING");
+
+// The exact contract signature, and kept in the .so for the runtime's dlsym.
+__attribute__((used)) static uint8_t (*const shim_debug_read_text)(
+    uint8_t, uint16_t, uint16_t, uint16_t, uint8_t*, uint16_t,
+    strucpp_text_chunk*) = &strucpp_debug_read_text;
+#endif  // STRUCPP_SHIM_HAS_DEBUG_TEXT
 
 // External linkage so generated_debug.cpp can reference &g_config.X.Y at
 // compile time. Same constraint as the Arduino sketch's g_config.
@@ -220,15 +241,8 @@ static uint16_t retain_read_leaf_live(uint8_t arr, uint16_t elem, uint8_t* dest)
 }
 
 static uint16_t retain_read_text_live(uint8_t arr, uint16_t elem, uint8_t* dest, uint16_t cap) {
-    static thread_local uint8_t again[1024];
-    uint16_t n = 0;
-    for (int t = 0; t < kLiveTries; ++t) {
-        n = strucpp::debug::handle_read_text(arr, elem, dest, cap);
-        if (cap > sizeof again) return n;
-        const uint16_t m = strucpp::debug::handle_read_text(arr, elem, again, cap);
-        if (m == n && std::memcmp(dest, again, n) == 0) return n;
-    }
-    return n;
+    return retain_live::read_text_stable(strucpp::debug::handle_read_text, arr, elem, dest, cap,
+                                         kLiveTries);
 }
 
 /** strucpp_retain_pack2, safe while the tasks run (see above). */

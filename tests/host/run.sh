@@ -32,6 +32,8 @@ TESTS=(
   "tests/host/test_image_outputs.cpp:core/src/plc_app/image_tables.cpp:core/src/plc_app/located_globals.c"
   "tests/host/test_plc_boot.cpp:core/src/plc_app/plc_boot.c:core/src/plc_app/plc_switch.c:core/src/drivers/plugin_plc_requests.c"
   "tests/host/test_debug_write_journal.cpp:core/src/plc_app/debug_write_journal.cpp"
+  "tests/host/test_debug_text.c:core/src/plc_app/debug_handler.c"
+  "tests/host/test_retain_live_read.cpp:"
 )
 
 failures=0

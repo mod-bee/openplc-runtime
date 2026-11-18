@@ -135,6 +135,37 @@ Get MD5 hash of the loaded PLC program.
 
 ---
 
+### 0x4F - DEBUG_GET_TEXT
+
+Read one chunk of a STRING or WSTRING of any declared length. DEBUG_GET and
+DEBUG_GET_LIST show at most 126 characters of a string; this reads the rest.
+
+**Request:**
+```
+4F [arr] [elem high] [elem low] [offset high] [offset low] [max high] [max low]
+```
+`offset` and `max` are in code units (STRING bytes, WSTRING UTF-16 units).
+
+**Response** (always this header, also on error):
+```
+4F [status] [tag] [flags] [cap:2] [len:2] [offset:2] [count:2] [tick:4] [data...]
+```
+- Header fields are big-endian. `cap` is the declared length, `len` the current
+  length, `count` the code units in `data`; `flags` bit 0 means forced.
+- `data` is STRING bytes, or WSTRING little-endian code units.
+- `max` is clamped to the 4096-byte frame: up to 4080 STRING characters or 2040
+  WSTRING units per chunk.
+- `status`: `7E` OK, `81` not a string or out of range, `83` no program loaded,
+  or a program built by a STruC++ without `strucpp_debug_read_text`.
+
+**Example:** `4F 00 00 05 00 00 01 00` reads up to 256 units of variable 5 in array 0.
+
+Runtimes before this code have no handler for it: the command socket answers
+`DEBUG:ERROR_PROCESSING` instead of a response, and a client keeps to the
+126-character window.
+
+---
+
 ## Response Format
 
 All successful responses start with `0x7E` (126 decimal, `~` character) as a success indicator.
@@ -281,6 +312,7 @@ The debug protocol is implemented in the PLC runtime core:
 - `debugGetTrace()` - Handles DEBUG_GET (0x43)
 - `debugGetList()` - Handles DEBUG_GET_LIST (0x44)
 - `debugGetMD5()` - Handles DEBUG_GET_MD5 (0x45)
+- `debugGetText()` - Handles DEBUG_GET_TEXT (0x4F)
 
 ### Web Server Side
 

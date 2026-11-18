@@ -97,6 +97,7 @@ uint16_t (*ext_strucpp_debug_size)       (uint8_t, uint16_t)             = nullp
 uint8_t  (*ext_strucpp_debug_set)        (uint8_t, uint16_t, bool,
                                           const uint8_t *, uint16_t)     = nullptr;
 uint16_t (*ext_strucpp_debug_read)       (uint8_t, uint16_t, uint8_t *)  = nullptr;
+plc_debug_read_text_func_t ext_strucpp_debug_read_text = nullptr;
 size_t   (*ext_strucpp_retain_blob_size)  (void)                       = nullptr;
 uint32_t (*ext_strucpp_retain_layout_hash)(void)                       = nullptr;
 size_t   (*ext_strucpp_retain_pack)       (uint8_t *, size_t)          = nullptr;
@@ -278,6 +279,8 @@ extern "C" int symbols_init(PluginManager *pm)
     *(void **)&ext_strucpp_debug_set         = resolve(pm, "strucpp_debug_set",         true);
     *(void **)&ext_strucpp_debug_read        = resolve(pm, "strucpp_debug_read",        true);
     *(void **)&ext_strucpp_debug_write       = resolve(pm, "strucpp_debug_write",       true);
+    /* Optional: exported by STruC++ headers that define STRUCPP_SHIM_HAS_DEBUG_TEXT. */
+    *(void **)&ext_strucpp_debug_read_text   = resolve(pm, "strucpp_debug_read_text",   false);
 
     /* Optional: a program built by an older STruC++ has no retain exports, and
      * the retain path then simply never runs. `required = false` so that is a
@@ -1408,6 +1411,7 @@ void image_tables_clear_null_pointers(void)
     ext_strucpp_debug_size        = nullptr;
     ext_strucpp_debug_set         = nullptr;
     ext_strucpp_debug_read        = nullptr;
+    ext_strucpp_debug_read_text   = nullptr;
     ext_strucpp_debug_write       = nullptr;
     ext_strucpp_debug_locate      = nullptr;
     /* The retain entry points point into the .so being unloaded. Nothing calls

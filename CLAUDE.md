@@ -156,7 +156,7 @@ State management: `core/src/plc_app/plc_state_manager.cpp`
 
 ### Key Subsystems
 - **Scan cycle tracker**: `core/src/plc_app/scan_cycle_manager.c` - scan timing statistics
-- **Debug handler**: `core/src/plc_app/debug_handler.c` - STruC++ debugger PDUs (function codes 0x41-0x45);
+- **Debug handler**: `core/src/plc_app/debug_handler.c` - STruC++ debugger PDUs (function codes 0x41-0x45, 0x4F);
   the WebSocket side is `webserver/debug_websocket.py`
 - **Watchdog**: `core/src/plc_app/utils/watchdog.c` - health monitoring
 - **Image tables**: `core/src/plc_app/image_tables.cpp` - I/O buffer management

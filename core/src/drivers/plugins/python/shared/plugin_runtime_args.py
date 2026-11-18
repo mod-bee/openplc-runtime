@@ -30,6 +30,19 @@ from .iec_types import IEC_BOOL, IEC_BYTE, IEC_UDINT, IEC_UINT, IEC_ULINT
 # than at the limit that actually rejected it.
 MAX_BUFFER_SIZE = 65536
 
+class PlcTextChunk(ctypes.Structure):
+    """plc_text_chunk_t (plc_app/debug_text.h): one chunk of a STRING/WSTRING."""
+
+    _fields_ = [
+        ("status", ctypes.c_uint8),
+        ("tag", ctypes.c_uint8),
+        ("flags", ctypes.c_uint8),
+        ("cap", ctypes.c_uint16),
+        ("len", ctypes.c_uint16),
+        ("count", ctypes.c_uint16),
+    ]
+
+
 class PluginRuntimeArgs(ctypes.Structure):
     """
     Python ctypes structure matching plugin_runtime_args_t from plugin_driver.h
@@ -140,6 +153,21 @@ class PluginRuntimeArgs(ctypes.Structure):
         ("set_switch_position", ctypes.CFUNCTYPE(None, ctypes.c_int)),
         # Current PLC state: int (*)(void), 0 = STOPPED, 1 = RUNNING, 2 = ERROR.
         ("get_plc_state", ctypes.CFUNCTYPE(ctypes.c_int)),
+        # Chunked STRING/WSTRING read: uint8 (*)(arr, elem, offset, max, data,
+        # data_cap, PlcTextChunk *info); 0x83 when the program lacks it.
+        (
+            "debug_read_text",
+            ctypes.CFUNCTYPE(
+                ctypes.c_uint8,
+                ctypes.c_uint8,
+                ctypes.c_uint16,
+                ctypes.c_uint16,
+                ctypes.c_uint16,
+                ctypes.POINTER(ctypes.c_uint8),
+                ctypes.c_uint16,
+                ctypes.POINTER(PlcTextChunk),
+            ),
+        ),
     ]
 
     def validate_pointers(self):

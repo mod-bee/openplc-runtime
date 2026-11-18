@@ -163,6 +163,72 @@ class TestThroughTheDebugSurface:
         assert args.written == bytes([2]) + "hi".encode("utf-16-le")
 
 
+class FakeTextArgs(FakeArgs):
+    """Adds debug_read_text (interface 1): copies up to `max` units from
+    `offset`, never more than data_cap bytes, and fills the chunk info."""
+
+    def __init__(self, text: bytes, cap: int, wide: bool = False, status: int = 0x7E):
+        super().__init__(bytes([0]))
+        self.text = text
+        self.cap = cap
+        self.wide = wide
+        self.text_status = status
+        self.calls = []
+
+    def debug_read_text(self, arr, elem, offset, max_units, data, data_cap, info):
+        offset = int(getattr(offset, "value", offset))
+        max_units = int(getattr(max_units, "value", max_units))
+        data_cap = int(getattr(data_cap, "value", data_cap))
+        chunk = info._obj
+        self.calls.append((offset, max_units, data_cap))
+        chunk.status = self.text_status
+        if self.text_status != 0x7E:
+            return self.text_status
+        unit = 2 if self.wide else 1
+        length = len(self.text) // unit
+        count = max(0, min(length - offset, max_units, data_cap // unit))
+        raw = self.text[offset * unit : (offset + count) * unit]
+        for i, b in enumerate(raw):
+            data[i] = b
+        chunk.tag = 20 if self.wide else 19
+        chunk.cap = self.cap
+        chunk.len = length
+        chunk.count = count
+        return 0x7E
+
+
+class TestFullLength:
+    def test_string_320_reads_all_300_characters(self):
+        text = bytes(ord("a") + i % 26 for i in range(300))
+        args = FakeTextArgs(text, cap=320)
+        assert debug_read_value(args, 0, 21, "STRING") == text.decode()
+
+    def test_wstring_300_reads_all_units(self):
+        text = "ü".encode("utf-16-le") * 300
+        args = FakeTextArgs(text, cap=300, wide=True)
+        assert debug_read_value(args, 0, 22, "WSTRING") == text
+
+    def test_wstring_beyond_one_call_reads_in_chunks(self):
+        text = "x".encode("utf-16-le") * 40000
+        args = FakeTextArgs(text, cap=40000, wide=True)
+        assert debug_read_value(args, 0, 22, "WSTRING") == text
+        assert all(cap <= 0xFFFF for _, _, cap in args.calls)
+        assert len(args.calls) >= 2
+
+    def test_empty_string_is_a_value(self):
+        args = FakeTextArgs(b"", cap=320)
+        assert debug_read_value(args, 0, 21, "STRING") == ""
+
+    def test_older_program_falls_back_to_the_126_window(self):
+        args = FakeTextArgs(b"", cap=0, status=0x83)
+        args.buf = bytearray((bytes([5]) + b"hello").ljust(127, b"\x00"))
+        assert debug_read_value(args, 0, 21, "STRING") == "hello"
+
+    def test_out_of_range_is_no_value(self):
+        args = FakeTextArgs(b"", cap=0, status=0x81)
+        assert debug_read_value(args, 0, 21, "STRING") is None
+
+
 class TestTypeMapping:
     def test_string_maps_to_ua_string(self):
         assert map_plc_to_opcua_type("STRING") == ua.VariantType.String

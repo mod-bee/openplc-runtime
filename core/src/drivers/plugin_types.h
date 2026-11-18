@@ -28,6 +28,7 @@
  * anything that must work on both — a VPP package, which ships and is built
  * independently of the runtime on the device — carries its own constants and
  * keeps them in the order documented there. */
+#include "../plc_app/debug_text.h"
 #include "../plc_app/image_table_id.h"
 #include <pthread.h>
 #include <stdbool.h>
@@ -97,6 +98,18 @@ typedef uint8_t  (*plugin_debug_set_func_t)(uint8_t arr, uint16_t elem,
                                             const uint8_t *bytes, uint16_t len);
 typedef uint8_t  (*plugin_debug_write_func_t)(uint8_t arr, uint16_t elem,
                                               const uint8_t *bytes, uint16_t len);
+
+/**
+ * @brief Chunked STRING/WSTRING read at any declared length
+ *
+ * debug_read_text(arr, elem, offset, max, data, data_cap, info) copies up to
+ * `max` code units from code unit `offset` into `data` (STRING bytes, WSTRING
+ * little-endian units), never more than `data_cap` bytes, and fills `info`
+ * (cap, len, count, forced flag). Returns info->status: 0x7E ok, 0x81 not a
+ * string or out of range, 0x83 when the loaded program does not export it
+ * (built by an older STruC++); debug_read then still gives 126 units.
+ */
+typedef plc_debug_read_text_func_t plugin_debug_read_text_func_t;
 
 /**
  * @brief PLC stop request from a plugin
@@ -322,6 +335,9 @@ typedef struct
     /* Current PLC state, for driving a status LED — see
      * plugin_get_plc_state_func_t. */
     plugin_get_plc_state_func_t get_plc_state;
+
+    /* Chunked STRING/WSTRING read — see plugin_debug_read_text_func_t. */
+    plugin_debug_read_text_func_t debug_read_text;
 } plugin_runtime_args_t;
 
 #endif /* PLUGIN_TYPES_H */

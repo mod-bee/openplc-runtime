@@ -522,7 +522,7 @@ WebSocket-based debug interface:
 
 1. **Authentication:** JWT token required
 2. **Commands:** Hex-encoded binary protocol
-3. **Function Codes:** 0x41-0x45 for different operations
+3. **Function Codes:** 0x41-0x45 and 0x4F for different operations
 4. **Responses:** Hex-encoded with 0x7E success indicator
 
 See [Debug Protocol](DEBUG_PROTOCOL.md) for details.

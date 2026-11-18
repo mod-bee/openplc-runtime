@@ -31,8 +31,11 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 
 # Add directories to path for module access
 _current_dir = os.path.dirname(os.path.abspath(__file__))
+_parent_dir = os.path.dirname(_current_dir)
 if _current_dir not in sys.path:
     sys.path.insert(0, _current_dir)
+if _parent_dir not in sys.path:
+    sys.path.insert(0, _parent_dir)
 
 # Import local modules (handle both package and direct loading)
 try:
@@ -42,21 +45,27 @@ except ImportError:
     from opcua_types import VariableMetadata
     from opcua_logging import log_debug, log_error, log_warn
 
+from shared.plugin_runtime_args import PlcTextChunk
+
 # TIME-related datatypes are encoded as 8-byte signed integers in
 # nanoseconds (matching strucpp's TIME_t / DATE_t / TOD_t / DT_t).
 TIME_DATATYPES = frozenset(["TIME", "DATE", "TOD", "DT"])
 
-# Maximum byte size for read buffers. Generous bound so a STRING
-# (126 bytes + 1 length byte = 127) plus future variable-length
-# encodings fit without reallocating per read.
+# Read buffer for scalars, and for strings from a program built before
+# debug_read_text (the 126-unit window: 1 count byte + 253 bytes).
 _READ_BUFFER_SIZE = 256
 
-# Status code from debug_dispatch.hpp
+# Status codes from debug_dispatch.hpp
 STATUS_OK = 0x7E
+STATUS_NOT_LOADED = 0x83
 
-# STRING/WSTRING wire: [count][payload]. `count` is BYTES (STRING) or
+# Bytes one debug_read_text call may fill: its data_cap is a uint16.
+_TEXT_CALL_MAX_BYTES = 0xFFFF
+
+# STRING/WSTRING write wire: [count][payload]. `count` is BYTES (STRING) or
 # UTF-16 CODE UNITS (WSTRING), capped at DEBUG_STRING_CAP. strucpp's
-# validate_payload refuses over-cap; truncation happens here.
+# validate_payload refuses over-cap; truncation happens here. Reads use
+# debug_read_text and carry the full declared length.
 STRING_DATATYPES = frozenset(["STRING", "WSTRING"])
 DEBUG_STRING_CAP = 126
 
@@ -190,9 +199,61 @@ def _ctype_for(datatype: str) -> Optional[Any]:
         return None
     return None
 
+def _decode_text(datatype: str, raw: bytes) -> Any:
+    """STRING to `str` (UTF-8, as the editor's codec), WSTRING to UTF-16LE `bytes`."""
+    if datatype.upper() == "WSTRING":
+        return raw
+    return raw.decode("utf-8", errors="replace")
+
+
+def _read_text(args: Any, arr: int, elem: int, datatype: str) -> Tuple[int, Optional[Any]]:
+    """Read a STRING/WSTRING at its full declared length through
+    args.debug_read_text, in as few calls as the uint16 data_cap allows.
+
+    Returns (status, value). STATUS_NOT_LOADED means the program was built
+    before debug_read_text; the caller then falls back to debug_read.
+    """
+    fn = getattr(args, "debug_read_text", None)
+    if not fn:
+        return STATUS_NOT_LOADED, None
+    unit = 2 if datatype.upper() == "WSTRING" else 1
+    info = PlcTextChunk()
+    out = bytearray()
+    offset = 0
+    size = _READ_BUFFER_SIZE
+    total = None
+    while True:
+        buf = (ctypes.c_uint8 * size)()
+        try:
+            status = fn(
+                ctypes.c_uint8(arr),
+                ctypes.c_uint16(elem),
+                ctypes.c_uint16(offset),
+                ctypes.c_uint16(0xFFFF),
+                ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint8)),
+                ctypes.c_uint16(size),
+                ctypes.byref(info),
+            )
+        except Exception as e:
+            log_error(f"debug_read_text({arr}, {elem}) raised: {e}")
+            return 0, None
+        if status != STATUS_OK:
+            return status, None
+        if total is None:
+            total = info.len
+        out += bytes(bytearray(buf[: info.count * unit]))
+        offset += info.count
+        if offset >= total or info.count == 0:
+            break
+        # The rest in one call when it fits.
+        size = min((total - offset) * unit, _TEXT_CALL_MAX_BYTES - (_TEXT_CALL_MAX_BYTES % unit))
+    return STATUS_OK, _decode_text(datatype, bytes(out))
+
+
 def debug_read_value(args: Any, arr: int, elem: int, datatype: str) -> Optional[Any]:
-    """Read a single PLC variable through args.debug_read and decode
-    it into a Python value matching the IEC datatype.
+    """Read a single PLC variable through args.debug_read (strings through
+    args.debug_read_text, at full length) and decode it into a Python value
+    matching the IEC datatype.
 
     Returns None on read failure (program not loaded, address out-of-
     bounds, type stub not implemented). Callers should treat None as
@@ -201,6 +262,18 @@ def debug_read_value(args: Any, arr: int, elem: int, datatype: str) -> Optional[
     ctype = _ctype_for(datatype)
     if ctype is None and not _is_string(datatype):
         return None
+
+    if _is_string(datatype):
+        status, text = _read_text(args, arr, elem, datatype)
+        if status == STATUS_OK:
+            return text
+        if status != STATUS_NOT_LOADED:
+            return None
+        _warn_once(
+            "no-read-text",
+            "program built without debug_read_text; strings read up to "
+            f"{DEBUG_STRING_CAP} characters",
+        )
 
     buf = (ctypes.c_uint8 * _READ_BUFFER_SIZE)()
     try:

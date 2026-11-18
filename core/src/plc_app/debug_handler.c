@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Autonomy®
 
-/* STruC++ debugger PDU handler. Codes 0x41-0x45 are Modbus-style for
+/* STruC++ debugger PDU handler. Codes 0x41-0x45 and 0x4F are Modbus-style for
  * editor/Arduino wire compatibility. Addressing is (arr:u8, elem:u16);
  * the editor's debug-map.json carries path→(arr, elem). */
 
@@ -20,6 +20,7 @@
 #define MB_FC_DEBUG_GET      0x43
 #define MB_FC_DEBUG_GET_LIST 0x44
 #define MB_FC_DEBUG_GET_MD5  0x45
+#define MB_FC_DEBUG_GET_TEXT 0x4F
 
 #define MB_DEBUG_SUCCESS              0x7E
 #define MB_DEBUG_ERROR_OUT_OF_BOUNDS  0x81
@@ -307,6 +308,56 @@ static void debugGetTraceList(uint8_t *frame, size_t *frame_len, size_t length)
     *frame_len = HDR + response_sz;
 }
 
+/* FC 0x4F — DEBUG_GET_TEXT (one chunk of a STRING/WSTRING at any declared length)
+ * Request:  [FC][arr u8][elem u16][offset u16][max u16]
+ * Response: [FC][status][tag][flags][cap u16][len u16][offset u16][count u16][tick u32][data]
+ * Header fields big-endian; data is STRING bytes or WSTRING little-endian units.
+ * Every answer carries the full header; max is clamped to the frame. */
+#define TEXT_HDR 16
+
+static void debugGetText(uint8_t *frame, size_t *frame_len, size_t length)
+{
+    plc_text_chunk_t info;
+    memset(&info, 0, sizeof(info));
+
+    uint16_t offset = 0;
+    if (!debug_symbols_ready() || ext_strucpp_debug_read_text == NULL)
+    {
+        info.status = MB_DEBUG_ERROR_NOT_LOADED;
+    }
+    else if (length < 8 || !debug_arr_in_range(frame[1]))
+    {
+        info.status = MB_DEBUG_ERROR_OUT_OF_BOUNDS;
+    }
+    else
+    {
+        const uint8_t  arr      = frame[1];
+        const uint16_t elem     = read_u16_be(&frame[2]);
+        offset                  = read_u16_be(&frame[4]);
+        uint16_t       max      = read_u16_be(&frame[6]);
+        const uint16_t data_cap = (uint16_t)(MAX_DEBUG_FRAME - TEXT_HDR);
+        if (max > data_cap) max = data_cap;
+        ext_strucpp_debug_read_text(arr, elem, offset, max, &frame[TEXT_HDR], data_cap, &info);
+        if (info.status != MB_DEBUG_SUCCESS) info.count = 0;
+    }
+
+    /* Count bounded by the frame even if the program misreports it. */
+    const size_t unit = (info.tag == PLC_TEXT_TAG_WSTRING) ? 2u : 1u;
+    if ((size_t)info.count * unit > MAX_DEBUG_FRAME - TEXT_HDR)
+        info.count = (uint16_t)((MAX_DEBUG_FRAME - TEXT_HDR) / unit);
+
+    frame[0] = MB_FC_DEBUG_GET_TEXT;
+    frame[1] = info.status;
+    frame[2] = info.tag;
+    frame[3] = info.flags;
+    write_u16_be(&frame[4], info.cap);
+    write_u16_be(&frame[6], info.len);
+    write_u16_be(&frame[8], offset);
+    write_u16_be(&frame[10], info.count);
+    write_u32_be(&frame[12], (uint32_t)scan_counter);
+    *frame_len = TEXT_HDR + (size_t)info.count * unit;
+}
+
 /* FC 0x45 — DEBUG_GET_MD5. Trailer is an endianness sentinel: a
  * native uint16_t store of 0xDEAD so wire bytes reveal target byte
  * order to the editor (LE → [0xAD,0xDE], BE → [0xDE,0xAD]). The
@@ -357,6 +408,7 @@ size_t process_debug_data(uint8_t *data, size_t length)
     case MB_FC_DEBUG_GET:      debugGetTrace(data, &response_len, length);      break;
     case MB_FC_DEBUG_GET_LIST: debugGetTraceList(data, &response_len, length);  break;
     case MB_FC_DEBUG_GET_MD5:  debugGetMd5(data, &response_len, length);        break;
+    case MB_FC_DEBUG_GET_TEXT: debugGetText(data, &response_len, length);       break;
     default:
         log_error("[debug] unknown function code 0x%02X", fcode);
         return 0;
