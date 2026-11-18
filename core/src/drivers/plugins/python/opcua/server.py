@@ -358,7 +358,8 @@ class OpcuaServerManager:
             self.address_space_builder = AddressSpaceBuilder(
                 self.server,
                 self.namespace_idx,
-                self.config
+                self.config,
+                runtime_args=getattr(self.buffer_accessor, "runtime_args", None),
             )
 
             if not await self.address_space_builder.build():

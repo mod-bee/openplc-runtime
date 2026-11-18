@@ -23,6 +23,7 @@
 #include <cstring>
 #include <vector>
 
+#include "debug_text.h"
 #include "debug_write_journal.h"
 #include "journal_buffer.h"
 
@@ -79,7 +80,22 @@ static uint8_t stub_debug_write_text(uint8_t, uint16_t, const uint8_t *data, uin
     return 0x7E;
 }
 
+// strucpp_debug_read_text stand-in: elem 5 a STRING(320), elem 6 a WSTRING(300),
+// elem 7 a CONSTANT STRING(20), anything else not a string.
+static uint8_t stub_debug_read_text(uint8_t, uint16_t elem, uint16_t, uint16_t, uint8_t *, uint16_t,
+                                    plc_text_chunk_t *info)
+{
+    memset(info, 0, sizeof *info);
+    if (elem < 5 || elem > 7) { info->status = 0x81; return 0x81; }
+    info->status = 0x7E;
+    info->tag    = elem == 6 ? PLC_TEXT_TAG_WSTRING : PLC_TEXT_TAG_STRING;
+    info->cap    = elem == 5 ? 320 : elem == 6 ? 300 : 20;
+    info->flags  = elem == 7 ? PLC_TEXT_FLAG_READ_ONLY : 0;
+    return 0x7E;
+}
+
 extern "C" {
+plc_debug_read_text_func_t ext_strucpp_debug_read_text = stub_debug_read_text;
 uint8_t (*ext_strucpp_debug_write_text)(uint8_t, uint16_t, const uint8_t *, uint16_t) =
     stub_debug_write_text;
 uint8_t (*ext_strucpp_debug_set)(uint8_t, uint16_t, bool, const uint8_t *, uint16_t) =
@@ -181,6 +197,39 @@ static void case_text_write_carries_the_whole_value()
         debug_write_journal_drain();
     }
     CHECK(g_global_writes.size() == 3 && g_text_writes == 3, "all applied");
+}
+
+static void case_text_write_checked()
+{
+    std::vector<uint8_t> text(400, 'x');
+    g_case = "a value longer than the declared length is cut to it before queueing";
+    reset();
+    CHECK(runtime_external_write_text_units(0, 5, text.data(), 400) == 0x7E, "queued");
+    debug_write_journal_drain();
+    CHECK(g_text_writes == 1 && g_text_count == 320 && g_text_bytes.size() == 320, "320 units");
+
+    g_case = "a WSTRING is copied in bytes, two per unit";
+    reset();
+    g_text_unit = 2;
+    std::vector<uint8_t> wide(600, 'w');
+    CHECK(runtime_external_write_text_units(0, 6, wide.data(), 300) == 0x7E, "queued");
+    debug_write_journal_drain();
+    CHECK(g_text_count == 300 && g_text_bytes.size() == 600, "600 bytes");
+
+    g_case = "a CONSTANT is refused as read-only before queueing";
+    reset();
+    CHECK(runtime_external_write_text_units(0, 7, text.data(), 5) == 0x87, "0x87");
+    debug_write_journal_drain();
+    CHECK(g_text_writes == 0, "nothing applied");
+
+    g_case = "a leaf that is not a string is refused";
+    reset();
+    CHECK(runtime_external_write_text_units(0, 1, text.data(), 5) == 0x81, "0x81");
+
+    g_case = "a program without the exports";
+    reset();
+    ext_strucpp_debug_write_text = nullptr;
+    CHECK(runtime_external_write_text_units(0, 5, text.data(), 5) == 0x83, "0x83");
 }
 
 static void case_text_write_refused_without_the_export()
@@ -287,6 +336,7 @@ int main()
     case_now_refused_outside_the_window();
     case_text_write_carries_the_whole_value();
     case_text_write_refused_without_the_export();
+    case_text_write_checked();
     reset();
 
     if (g_failures == 0)

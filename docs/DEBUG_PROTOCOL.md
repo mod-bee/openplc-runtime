@@ -151,7 +151,8 @@ DEBUG_GET_LIST show at most 126 characters of a string; this reads the rest.
 4F [status] [tag] [flags] [cap:2] [len:2] [offset:2] [count:2] [tick:4] [data...]
 ```
 - Header fields are big-endian. `cap` is the declared length, `len` the current
-  length, `count` the code units in `data`; `flags` bit 0 means forced.
+  length, `count` the code units in `data`; `flags` bit 0 means forced, bit 1
+  read-only (a CONSTANT).
 - `data` is STRING bytes, or WSTRING little-endian code units.
 - `max` is clamped to the 4096-byte frame: up to 4080 STRING characters or 2040
   WSTRING units per chunk.
@@ -159,6 +160,10 @@ DEBUG_GET_LIST show at most 126 characters of a string; this reads the rest.
   or a program built by a STruC++ without `strucpp_debug_read_text`.
 
 **Example:** `4F 00 00 05 00 00 01 00` reads up to 256 units of variable 5 in array 0.
+
+Reads of DEBUG_GET, DEBUG_GET_LIST and DEBUG_GET_TEXT take a global's own lock
+(polled for at most 2 ms, never blocking a PLC task) and read a task's
+variable until two reads agree, when the program exports the lock hooks.
 
 Runtimes before this code have no handler for it: the command socket answers
 `DEBUG:ERROR_PROCESSING` instead of a response, and a client keeps to the

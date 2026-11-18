@@ -58,6 +58,10 @@ _READ_BUFFER_SIZE = 256
 # Status codes from debug_dispatch.hpp
 STATUS_OK = 0x7E
 STATUS_NOT_LOADED = 0x83
+STATUS_READ_ONLY = 0x87
+
+# PlcTextChunk.flags
+TEXT_FLAG_READ_ONLY = 0x02  # a CONSTANT
 
 # Bytes one debug_read_text call may fill: its data_cap is a uint16.
 _TEXT_CALL_MAX_BYTES = 0xFFFF
@@ -274,14 +278,11 @@ def _text_raw(datatype: str, value: Any, cap: int) -> Optional[bytes]:
     return _truncate_utf8(raw, cap)
 
 
-def _write_text(args: Any, arr: int, elem: int, datatype: str, value: Any) -> int:
-    """Write a STRING/WSTRING at its full declared length through
-    args.debug_write_text. Returns its status; STATUS_NOT_LOADED means the
-    program was built before it and the caller falls back to debug_write."""
-    fn = getattr(args, "debug_write_text", None)
-    read = getattr(args, "debug_read_text", None)
-    if not fn or not read:
-        return STATUS_NOT_LOADED
+def _text_info(args: Any, arr: int, elem: int) -> Tuple[int, Optional[PlcTextChunk]]:
+    """The leaf's chunk info (cap, len, flags) from debug_read_text with max 0."""
+    read = getattr(args, "debug_read_text", None) if args is not None else None
+    if not read:
+        return STATUS_NOT_LOADED, None
     info = PlcTextChunk()
     none = (ctypes.c_uint8 * 1)()
     try:
@@ -296,9 +297,32 @@ def _write_text(args: Any, arr: int, elem: int, datatype: str, value: Any) -> in
         )
     except Exception as e:
         log_error(f"debug_read_text({arr}, {elem}) raised: {e}")
-        return 0
-    if status != STATUS_OK:
+        return 0, None
+    return status, info
+
+
+def is_read_only(args: Any, arr: int, elem: int, datatype: str) -> bool:
+    """True for a STRING/WSTRING the program declares CONSTANT. Other types,
+    and programs without debug_read_text, report False."""
+    if not _is_string(datatype):
+        return False
+    status, info = _text_info(args, arr, elem)
+    return status == STATUS_OK and info is not None and bool(info.flags & TEXT_FLAG_READ_ONLY)
+
+
+def _write_text(args: Any, arr: int, elem: int, datatype: str, value: Any) -> int:
+    """Write a STRING/WSTRING at its full declared length through
+    args.debug_write_text. Returns its status; STATUS_NOT_LOADED means the
+    program was built before it and the caller falls back to debug_write."""
+    fn = getattr(args, "debug_write_text", None)
+    if not fn:
+        return STATUS_NOT_LOADED
+    status, info = _text_info(args, arr, elem)
+    if status != STATUS_OK or info is None:
         return status
+    if info.flags & TEXT_FLAG_READ_ONLY:
+        _warn_once(f"read-only:{arr}:{elem}", f"write to CONSTANT ({arr}, {elem}) refused")
+        return STATUS_READ_ONLY
     raw = _text_raw(datatype, value, info.cap)
     if raw is None:
         log_warn(f"debug_write_text({arr}, {elem}, {datatype}): cannot encode {value!r}")

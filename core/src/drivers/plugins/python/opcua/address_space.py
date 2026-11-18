@@ -28,10 +28,12 @@ if _parent_dir not in sys.path:
 try:
     from .opcua_logging import log_debug, log_error, log_info, log_warn
     from .opcua_types import VariableNode
+    from .opcua_memory import is_read_only
     from .opcua_utils import map_plc_to_opcua_type, convert_value_for_opcua, default_for_opcua
 except ImportError:
     from opcua_logging import log_debug, log_error, log_info, log_warn
     from opcua_types import VariableNode
+    from opcua_memory import is_read_only
     from opcua_utils import map_plc_to_opcua_type, convert_value_for_opcua, default_for_opcua
 
 from shared.plugin_config_decode.opcua_config_model import (
@@ -73,7 +75,8 @@ class AddressSpaceBuilder:
         self,
         server: Server,
         namespace_idx: int,
-        config: OpcuaConfig
+        config: OpcuaConfig,
+        runtime_args: Any = None,
     ):
         """
         Initialize the address space builder.
@@ -82,8 +85,11 @@ class AddressSpaceBuilder:
             server: The asyncua Server instance
             namespace_idx: Namespace index for created nodes
             config: Typed OpcuaConfig instance
+            runtime_args: plugin_runtime_args_t, to keep a CONSTANT's node
+                read-only (optional; without it permissions alone decide)
         """
         self.server = server
+        self.runtime_args = runtime_args
         self.namespace_idx = namespace_idx
         self.config = config
 
@@ -251,7 +257,7 @@ class AddressSpaceBuilder:
         )
 
         # Set writable if any role has write permission
-        has_write_permission = self._check_write_permission(var.permissions)
+        has_write_permission = self._leaf_writable(var.permissions, var.arr, var.elem, var.datatype)
         if has_write_permission:
             await node.set_writable()
             log_debug(f"Node {var.node_id} set as writable")
@@ -391,7 +397,7 @@ class AddressSpaceBuilder:
         )
 
         # Set writable if any role has write permission
-        has_write_permission = self._check_write_permission(field.permissions)
+        has_write_permission = self._leaf_writable(field.permissions, field.arr, field.elem, field.datatype)
         if has_write_permission:
             await node.set_writable()
 
@@ -470,7 +476,7 @@ class AddressSpaceBuilder:
         )
 
         # Set writable if any role has write permission
-        has_write_permission = self._check_write_permission(arr.permissions)
+        has_write_permission = self._leaf_writable(arr.permissions, arr.arr, arr.elem, arr.datatype)
         if has_write_permission:
             await node.set_writable()
 
@@ -496,6 +502,17 @@ class AddressSpaceBuilder:
             f"Created array {arr.node_id}[{arr.length}] "
             f"(arr={arr.arr}, elem={arr.elem})"
         )
+
+    def _leaf_writable(
+        self, permissions: VariablePermissions, arr: Optional[int], elem: Optional[int], datatype: str
+    ) -> bool:
+        """Writable when a role may write and the program does not declare the
+        leaf CONSTANT. A node left unwritable answers a write BadNotWritable."""
+        if not self._check_write_permission(permissions):
+            return False
+        if arr is None or elem is None:
+            return True
+        return not is_read_only(self.runtime_args, arr, elem, datatype)
 
     def _check_write_permission(self, permissions: VariablePermissions) -> bool:
         """

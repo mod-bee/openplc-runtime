@@ -248,6 +248,11 @@ extern "C"
     /* Full-length STRING/WSTRING write, applied by the debug-write drain.
      * Optional: NULL for a program built before it (126-unit debug_write only). */
     extern plc_debug_write_text_func_t ext_strucpp_debug_write_text;
+    /* A global's own lock, for debug reads (debug_read_guard.c). Optional:
+     * all three or none are used; NULL in a program built without them. */
+    extern int32_t (*ext_strucpp_debug_global_index)(uint8_t arr, uint16_t elem);
+    extern bool    (*ext_strucpp_global_try_lock)(uint32_t g);
+    extern void    (*ext_strucpp_global_unlock)(uint32_t g);
     /* Soft write via IECVar::set(). Silently ignored if the variable
      * is forced (force wins). Distinct from debug_set(forcing=true). */
     extern uint8_t  (*ext_strucpp_debug_write)      (uint8_t arr, uint16_t elem,

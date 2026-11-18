@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "debug_handler.h"
+#include "debug_read_guard.h"
 #include "debug_write_journal.h"
 #include "image_tables.h"
 #include "utils/log.h"
@@ -208,7 +209,7 @@ static void debugGetTrace(uint8_t *frame, size_t *frame_len, size_t length)
         }
         if (HDR + response_sz + var_size > MAX_DEBUG_FRAME) break;
 
-        uint16_t n = ext_strucpp_debug_read(arr, e, write_ptr);
+        uint16_t n = debug_read_guarded(arr, e, write_ptr);
         if (n == 0)
         {
             last_elem = e;
@@ -289,7 +290,7 @@ static void debugGetTraceList(uint8_t *frame, size_t *frame_len, size_t length)
         }
         if (HDR + response_sz + var_size > MAX_DEBUG_FRAME) break;
 
-        uint16_t n = ext_strucpp_debug_read(arr, elem, write_ptr);
+        uint16_t n = debug_read_guarded(arr, elem, write_ptr);
         if (n == 0)
         {
             last_req_idx = i;
@@ -337,7 +338,7 @@ static void debugGetText(uint8_t *frame, size_t *frame_len, size_t length)
         uint16_t       max      = read_u16_be(&frame[6]);
         const size_t   room     = MAX_DEBUG_FRAME - TEXT_HDR; /* bytes */
         if (max > room) max = (uint16_t)room;
-        ext_strucpp_debug_read_text(arr, elem, offset, max, &frame[TEXT_HDR], (uint16_t)room, &info);
+        debug_read_text_guarded(arr, elem, offset, max, &frame[TEXT_HDR], (uint16_t)room, &info);
         if (info.status != MB_DEBUG_SUCCESS) info.count = 0;
     }
 

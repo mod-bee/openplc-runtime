@@ -43,7 +43,10 @@ from opcua_memory import (
     _is_string,
     debug_read_value,
     debug_write_value,
+    is_read_only,
 )
+from address_space import AddressSpaceBuilder
+from shared.plugin_config_decode.opcua_config_model import VariablePermissions
 from opcua_utils import map_plc_to_opcua_type
 
 
@@ -167,8 +170,10 @@ class FakeTextArgs(FakeArgs):
     """Adds debug_read_text (interface 1): copies up to `max` units from
     `offset`, never more than data_cap bytes, and fills the chunk info."""
 
-    def __init__(self, text: bytes, cap: int, wide: bool = False, status: int = 0x7E):
+    def __init__(self, text: bytes, cap: int, wide: bool = False, status: int = 0x7E,
+                 read_only: bool = False):
         super().__init__(bytes([0]))
+        self.read_only = read_only
         self.text = text
         self.cap = cap
         self.wide = wide
@@ -191,6 +196,7 @@ class FakeTextArgs(FakeArgs):
         for i, b in enumerate(raw):
             data[i] = b
         chunk.tag = 20 if self.wide else 19
+        chunk.flags = 0x02 if self.read_only else 0
         chunk.cap = self.cap
         chunk.len = length
         chunk.count = count
@@ -232,8 +238,9 @@ class TestFullLength:
 class FakeWriteTextArgs(FakeTextArgs):
     """Adds debug_write_text (interface 1b): records count and the bytes."""
 
-    def __init__(self, cap: int, wide: bool = False, write_status: int = 0x7E):
-        super().__init__(b"", cap=cap, wide=wide)
+    def __init__(self, cap: int, wide: bool = False, write_status: int = 0x7E,
+                 read_only: bool = False):
+        super().__init__(b"", cap=cap, wide=wide, read_only=read_only)
         self.write_status = write_status
         self.text_written = None
 
@@ -281,6 +288,30 @@ class TestFullLengthWrite:
     def test_a_refusal_is_reported(self):
         args = FakeWriteTextArgs(cap=320, write_status=0x81)
         assert debug_write_value(args, 0, 21, "STRING", "hello") is False
+
+
+class TestReadOnly:
+    def test_a_constant_is_refused_before_the_runtime_is_asked(self):
+        args = FakeWriteTextArgs(cap=20, read_only=True)
+        assert debug_write_value(args, 0, 21, "STRING", "hello") is False
+        assert args.text_written is None and args.written is None
+
+    def test_a_constant_string_is_reported_read_only(self):
+        assert is_read_only(FakeWriteTextArgs(cap=20, read_only=True), 0, 21, "STRING") is True
+        assert is_read_only(FakeWriteTextArgs(cap=20), 0, 21, "STRING") is False
+
+    def test_without_the_text_exports_nothing_is_read_only(self):
+        assert is_read_only(FakeArgs(), 0, 21, "STRING") is False
+        assert is_read_only(None, 0, 21, "STRING") is False
+
+    def test_the_node_of_a_constant_is_not_writable(self):
+        # A node created without set_writable() answers a write BadNotWritable.
+        perms = VariablePermissions.from_dict({"viewer": "r", "operator": "rw", "engineer": "rw"})
+        ro = AddressSpaceBuilder(None, 0, None, runtime_args=FakeWriteTextArgs(cap=20, read_only=True))
+        rw = AddressSpaceBuilder(None, 0, None, runtime_args=FakeWriteTextArgs(cap=20))
+        assert ro._leaf_writable(perms, 0, 21, "STRING") is False
+        assert rw._leaf_writable(perms, 0, 21, "STRING") is True
+        assert AddressSpaceBuilder(None, 0, None)._leaf_writable(perms, 0, 21, "STRING") is True
 
 
 class TestTypeMapping:

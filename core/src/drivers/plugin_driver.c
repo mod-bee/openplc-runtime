@@ -16,6 +16,7 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include "../plc_app/debug_read_guard.h"
 #include "../plc_app/debug_write_journal.h"
 #include "../plc_app/image_tables.h"
 #include "../plc_app/journal_buffer.h"
@@ -110,15 +111,14 @@ static uint16_t plugin_debug_size(uint8_t arr, uint16_t elem)
 
 static uint16_t plugin_debug_read(uint8_t arr, uint16_t elem, uint8_t *dest)
 {
-    return ext_strucpp_debug_read ? ext_strucpp_debug_read(arr, elem, dest) : 0;
+    return debug_read_guarded(arr, elem, dest);
 }
 
 static uint8_t plugin_debug_read_text(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max,
                                       uint8_t *data, uint16_t data_cap, plc_text_chunk_t *info)
 {
-    plc_debug_read_text_func_t fn = ext_strucpp_debug_read_text;
-    if (fn && ext_strucpp_debug_array_count)
-        return fn(arr, elem, offset, max, data, data_cap, info);
+    if (ext_strucpp_debug_read_text && ext_strucpp_debug_array_count)
+        return debug_read_text_guarded(arr, elem, offset, max, data, data_cap, info);
     if (info)
     {
         memset(info, 0, sizeof(*info));
@@ -127,25 +127,14 @@ static uint8_t plugin_debug_read_text(uint8_t arr, uint16_t elem, uint16_t offse
     return 0x83;
 }
 
-// Queued like debug_write; the leaf's width comes from its chunk info, so the
-// journal copies count units in bytes (size_t: a WSTRING(65535) is 131070).
+// Queued like debug_write: width, declared length and read-only flag come from
+// the leaf (runtime_external_write_text_units).
 static uint8_t plugin_debug_write_text(uint8_t arr, uint16_t elem, const uint8_t *data,
                                        uint16_t count)
 {
-    if (!ext_strucpp_debug_write_text || !ext_strucpp_debug_read_text ||
-        !ext_strucpp_debug_array_count)
-        return 0x83; // no program, or one built without it
-    plc_text_chunk_t info;
-    uint8_t          none = 0;
-    memset(&info, 0, sizeof(info));
-    uint8_t st = ext_strucpp_debug_read_text(arr, elem, 0, 0, &none, 0, &info);
-    if (st != 0x7E)
-        return st;
-    if (count > info.cap)
-        count = info.cap; // the program cuts it anyway; do not copy the excess
-    const size_t unit = (info.tag == PLC_TEXT_TAG_WSTRING) ? 2u : 1u;
-    int rc = runtime_external_write_text(arr, elem, data, count, (size_t)count * unit);
-    return (rc == 0) ? 0x7E : 0x82;
+    if (!ext_strucpp_debug_array_count)
+        return 0x83; // no program
+    return runtime_external_write_text_units(arr, elem, data, count);
 }
 
 // debug_set/debug_write run on PLUGIN threads. ENQUEUE through the

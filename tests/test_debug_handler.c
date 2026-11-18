@@ -7,6 +7,7 @@
  * the on-wire frame format and runtime bounds checks can be pinned. */
 
 #include "debug_handler.h"
+#include "debug_read_guard.h" /* links debug_read_guard.c */
 #include "debug_handler_mocks.h"
 #include "unity.h"
 

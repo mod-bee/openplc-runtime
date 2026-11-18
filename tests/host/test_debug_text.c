@@ -29,6 +29,15 @@ uint16_t (*ext_strucpp_debug_size)(uint8_t, uint16_t)            = NULL;
 uint8_t (*ext_strucpp_debug_set)(uint8_t, uint16_t, bool, const uint8_t *, uint16_t) = NULL;
 uint16_t (*ext_strucpp_debug_read)(uint8_t, uint16_t, uint8_t *) = NULL;
 plc_debug_read_text_func_t ext_strucpp_debug_read_text           = NULL;
+int32_t (*ext_strucpp_debug_global_index)(uint8_t, uint16_t)     = NULL;
+bool (*ext_strucpp_global_try_lock)(uint32_t)                    = NULL;
+void (*ext_strucpp_global_unlock)(uint32_t)                      = NULL;
+
+/* Lock exports for the guarded-read case: every leaf task-local. */
+static int     g_text_reads, g_text_torn;
+static int32_t stub_global_index(uint8_t arr, uint16_t elem) { return -1; }
+static bool    stub_try_lock(uint32_t g) { return true; }
+static void    stub_unlock(uint32_t g) {}
 
 int runtime_external_write(uint8_t arr, uint16_t elem, uint8_t op, const uint8_t *bytes,
                            uint16_t len)
@@ -62,6 +71,7 @@ static uint8_t stub_read_text(uint8_t arr, uint16_t elem, uint16_t offset, uint1
 {
     g_last_max      = max;
     g_last_data_cap = data_cap;
+    ++g_text_reads;
     memset(info, 0, sizeof(*info));
     if (arr != 0 || elem > 1)
     {
@@ -86,6 +96,7 @@ static uint8_t stub_read_text(uint8_t arr, uint16_t elem, uint16_t offset, uint1
             data[i] = s_chars[offset + i];
         }
     }
+    if (g_text_reads <= g_text_torn && count > 0) data[count / 2] ^= (uint8_t)g_text_reads;
     info->status = 0x7E;
     info->tag    = wide ? PLC_TEXT_TAG_WSTRING : PLC_TEXT_TAG_STRING;
     info->flags  = wide ? 1 : 0;
@@ -233,11 +244,32 @@ static void case_errors(void)
     CHECK(n == HDR && frame[1] == 0x81 && be16(&frame[10]) == 0, "status passed through");
 }
 
+static void case_guarded_read(void)
+{
+    g_case = "a task-local STRING written while FC 0x4F reads it";
+    load_program(true);
+    ext_strucpp_debug_global_index = stub_global_index;
+    ext_strucpp_global_try_lock    = stub_try_lock;
+    ext_strucpp_global_unlock      = stub_unlock;
+    s_len                          = 300;
+    for (int i = 0; i < S_CAP; ++i) s_chars[i] = (uint8_t)('A' + i % 26);
+    g_text_reads = 0;
+    g_text_torn  = 1;
+    size_t n = request(0, 0, 0, 1000, 8);
+    CHECK(n == HDR + 300 && memcmp(&frame[HDR], s_chars, 300) == 0, "read until two reads agree");
+    CHECK(g_text_reads >= 3, "read again");
+    ext_strucpp_debug_global_index = NULL;
+    ext_strucpp_global_try_lock    = NULL;
+    ext_strucpp_global_unlock      = NULL;
+    g_text_torn                    = 0;
+}
+
 int main(void)
 {
     case_string_320();
     case_frame_clamp();
     case_errors();
+    case_guarded_read();
     if (g_fail)
     {
         printf("test_debug_text: %d failed\n", g_fail);

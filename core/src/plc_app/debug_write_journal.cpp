@@ -28,6 +28,7 @@ namespace {
 constexpr size_t   DBGW_MAX_ENTRIES = 128;
 constexpr uint16_t DBGW_MAX_BYTES   = 256;
 constexpr uint8_t DBGW_STATUS_OK = strucpp::debug::STATUS_OK;
+constexpr uint8_t DBGW_STATUS_READ_ONLY = 0x87; /* strucpp::debug::STATUS_READ_ONLY */
 
 /* A text write's value lives on the heap (a WSTRING(65535) is 131070 bytes).
  * The drain leaves it there; the writer that next claims the slot, or reset,
@@ -285,6 +286,23 @@ extern "C" int runtime_external_write_text(uint8_t arr, uint16_t elem, const uin
     g_dbgw_count.store(n + 1, std::memory_order_release);
     pthread_mutex_unlock(&g_dbgw_lock);
     return 0;
+}
+
+extern "C" uint8_t runtime_external_write_text_units(uint8_t arr, uint16_t elem,
+                                                     const uint8_t *data, uint16_t count)
+{
+    if (!ext_strucpp_debug_write_text || !ext_strucpp_debug_read_text) return 0x83;
+    plc_text_chunk_t info;
+    uint8_t          none = 0;
+    memset(&info, 0, sizeof(info));
+    const uint8_t st = ext_strucpp_debug_read_text(arr, elem, 0, 0, &none, 0, &info);
+    if (st != DBGW_STATUS_OK) return st;
+    if (info.flags & PLC_TEXT_FLAG_READ_ONLY) return DBGW_STATUS_READ_ONLY;
+    if (count > info.cap) count = info.cap; /* the program cuts it anyway */
+    const size_t unit = (info.tag == PLC_TEXT_TAG_WSTRING) ? 2u : 1u;
+    return runtime_external_write_text(arr, elem, data, count, (size_t)count * unit) == 0
+               ? DBGW_STATUS_OK
+               : 0x82;
 }
 
 extern "C" void debug_write_journal_drain(void)

@@ -27,6 +27,10 @@ uint8_t  (*ext_strucpp_debug_write)      (uint8_t, uint16_t,
                                           const uint8_t *, uint16_t)     = NULL;
 /* NULL: a program without FC 0x4F; tests/host/test_debug_text.c covers it. */
 plc_debug_read_text_func_t ext_strucpp_debug_read_text                  = NULL;
+/* NULL: no lock exports, so debug_read_guard.c reads once, as before. */
+int32_t (*ext_strucpp_debug_global_index)(uint8_t, uint16_t)             = NULL;
+bool    (*ext_strucpp_global_try_lock)(uint32_t)                         = NULL;
+void    (*ext_strucpp_global_unlock)(uint32_t)                           = NULL;
 
 /* ext_strucpp_program_md5, scan_counter and runtime_external_write are DEFINED
  * here, not just declared.

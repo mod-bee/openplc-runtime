@@ -37,6 +37,14 @@ int runtime_external_write(uint8_t arr, uint16_t elem, uint8_t op,
 int runtime_external_write_text(uint8_t arr, uint16_t elem, const uint8_t *data,
                                 uint16_t count, size_t nbytes);
 
+/* The same write as the plugins ask for it: `count` code units, the width and
+ * declared length taken from the leaf. Cut to the declared length; a CONSTANT
+ * refused before queueing. Returns 0x7E queued, 0x81 not a string or out of
+ * range, 0x82 queue full or out of memory, 0x83 the program lacks the
+ * exports, 0x87 read-only. */
+uint8_t runtime_external_write_text_units(uint8_t arr, uint16_t elem, const uint8_t *data,
+                                          uint16_t count);
+
 /* Immediate write with the drain's routing; refused (-1) outside an open direct window. */
 int runtime_external_write_now(uint8_t arr, uint16_t elem, uint8_t op,
                                const uint8_t *bytes, uint16_t len);

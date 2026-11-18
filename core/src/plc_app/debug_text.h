@@ -25,7 +25,7 @@ extern "C"
     {
         uint8_t  status; /* 0x7E OK, 0x81 not a string / out of range, 0x83 not loaded */
         uint8_t  tag;    /* debug type tag of the leaf (STRING or WSTRING) */
-        uint8_t  flags;  /* bit0 = forced */
+        uint8_t  flags;  /* PLC_TEXT_FLAG_* */
         uint16_t cap;    /* declared length, code units */
         uint16_t len;    /* current length, code units */
         uint16_t count;  /* code units copied into data */
@@ -50,6 +50,10 @@ extern "C"
 #else
 #define PLC_TEXT_STATIC_ASSERT _Static_assert
 #endif
+
+/* plc_text_chunk_t.flags */
+#define PLC_TEXT_FLAG_FORCED    0x01
+#define PLC_TEXT_FLAG_READ_ONLY 0x02 /* a CONSTANT: writes are refused with 0x87 */
 
 /* strucpp::debug::TAG_STRING / TAG_WSTRING; the shim asserts them. */
 #define PLC_TEXT_TAG_STRING  19
