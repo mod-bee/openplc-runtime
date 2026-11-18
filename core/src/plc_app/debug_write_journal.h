@@ -8,6 +8,7 @@
 #define DEBUG_WRITE_JOURNAL_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -18,7 +19,8 @@ extern "C" {
 typedef enum {
     DBGW_OP_WRITE   = 0, /* soft write — set value_ (respects an active force) */
     DBGW_OP_FORCE   = 1, /* force — pin value_ to the payload                  */
-    DBGW_OP_UNFORCE = 2  /* unforce — release a pinned variable                */
+    DBGW_OP_UNFORCE = 2, /* unforce — release a pinned variable                */
+    DBGW_OP_TEXT    = 3  /* full-length STRING/WSTRING write (soft)             */
 } debug_write_op_t;
 
 /* Enqueue an external write/force/unforce of debug leaf (arr, elem).
@@ -27,6 +29,13 @@ typedef enum {
  * the next dispatcher drain. */
 int runtime_external_write(uint8_t arr, uint16_t elem, uint8_t op,
                            const uint8_t *bytes, uint16_t len);
+
+/* Enqueue a full-length STRING/WSTRING write: `count` code units in `nbytes`
+ * bytes (count, or 2 * count for WSTRING), copied to the heap and applied by
+ * the drain through strucpp_debug_write_text. Returns 0, or -1 if the queue is
+ * full, memory runs out, or the program lacks the export. */
+int runtime_external_write_text(uint8_t arr, uint16_t elem, const uint8_t *data,
+                                uint16_t count, size_t nbytes);
 
 /* Immediate write with the drain's routing; refused (-1) outside an open direct window. */
 int runtime_external_write_now(uint8_t arr, uint16_t elem, uint8_t op,

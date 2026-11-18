@@ -127,6 +127,27 @@ static uint8_t plugin_debug_read_text(uint8_t arr, uint16_t elem, uint16_t offse
     return 0x83;
 }
 
+// Queued like debug_write; the leaf's width comes from its chunk info, so the
+// journal copies count units in bytes (size_t: a WSTRING(65535) is 131070).
+static uint8_t plugin_debug_write_text(uint8_t arr, uint16_t elem, const uint8_t *data,
+                                       uint16_t count)
+{
+    if (!ext_strucpp_debug_write_text || !ext_strucpp_debug_read_text ||
+        !ext_strucpp_debug_array_count)
+        return 0x83; // no program, or one built without it
+    plc_text_chunk_t info;
+    uint8_t          none = 0;
+    memset(&info, 0, sizeof(info));
+    uint8_t st = ext_strucpp_debug_read_text(arr, elem, 0, 0, &none, 0, &info);
+    if (st != 0x7E)
+        return st;
+    if (count > info.cap)
+        count = info.cap; // the program cuts it anyway; do not copy the excess
+    const size_t unit = (info.tag == PLC_TEXT_TAG_WSTRING) ? 2u : 1u;
+    int rc = runtime_external_write_text(arr, elem, data, count, (size_t)count * unit);
+    return (rc == 0) ? 0x7E : 0x82;
+}
+
 // debug_set/debug_write run on PLUGIN threads. ENQUEUE through the
 // debug-write journal; dispatcher applies at the no-task-running window.
 // Returns 0x7E ok, 0x82 queue full, 0x81 no program.
@@ -1192,6 +1213,7 @@ void *generate_structured_args_with_driver(plugin_type_t type, plugin_driver_t *
     args->set_switch_position = plugin_set_switch_position;
     args->get_plc_state       = plugin_get_plc_state;
     args->debug_read_text     = plugin_debug_read_text;
+    args->debug_write_text    = plugin_debug_write_text;
 
     // PLC base tick time. Runtime owns base_tick_ns; on first plugin init
     // (before symbols_init) it carries the 20 ms default, so plugins must

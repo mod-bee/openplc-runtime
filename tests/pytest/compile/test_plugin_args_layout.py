@@ -26,7 +26,7 @@ from shared.plugin_runtime_args import PlcTextChunk, PluginRuntimeArgs  # noqa: 
 
 _CC = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
 
-_FIELDS = ("debug_write", "get_plc_state", "debug_read_text")
+_FIELDS = ("debug_write", "get_plc_state", "debug_read_text", "debug_write_text")
 
 _PROGRAM = """
 #include <stddef.h>
@@ -37,6 +37,7 @@ int main(void) {
     printf("debug_write %zu\\n", offsetof(plugin_runtime_args_t, debug_write));
     printf("get_plc_state %zu\\n", offsetof(plugin_runtime_args_t, get_plc_state));
     printf("debug_read_text %zu\\n", offsetof(plugin_runtime_args_t, debug_read_text));
+    printf("debug_write_text %zu\\n", offsetof(plugin_runtime_args_t, debug_write_text));
     printf("chunk %zu %zu %zu %zu\\n", sizeof(plc_text_chunk_t), offsetof(plc_text_chunk_t, cap),
            offsetof(plc_text_chunk_t, len), offsetof(plc_text_chunk_t, count));
     return 0;

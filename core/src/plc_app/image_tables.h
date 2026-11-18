@@ -245,6 +245,9 @@ extern "C"
     /* Chunked STRING/WSTRING read for FC 0x4F. Optional: NULL for a program
      * built before it, and FC 0x4F then answers 0x83. */
     extern plc_debug_read_text_func_t ext_strucpp_debug_read_text;
+    /* Full-length STRING/WSTRING write, applied by the debug-write drain.
+     * Optional: NULL for a program built before it (126-unit debug_write only). */
+    extern plc_debug_write_text_func_t ext_strucpp_debug_write_text;
     /* Soft write via IECVar::set(). Silently ignored if the variable
      * is forced (force wins). Distinct from debug_set(forcing=true). */
     extern uint8_t  (*ext_strucpp_debug_write)      (uint8_t arr, uint16_t elem,

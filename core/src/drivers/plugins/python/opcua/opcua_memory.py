@@ -62,10 +62,11 @@ STATUS_NOT_LOADED = 0x83
 # Bytes one debug_read_text call may fill: its data_cap is a uint16.
 _TEXT_CALL_MAX_BYTES = 0xFFFF
 
-# STRING/WSTRING write wire: [count][payload]. `count` is BYTES (STRING) or
-# UTF-16 CODE UNITS (WSTRING), capped at DEBUG_STRING_CAP. strucpp's
-# validate_payload refuses over-cap; truncation happens here. Reads use
-# debug_read_text and carry the full declared length.
+# STRING/WSTRING wire of debug_write/debug_set: [count][payload]. `count` is
+# BYTES (STRING) or UTF-16 CODE UNITS (WSTRING), capped at DEBUG_STRING_CAP;
+# truncation happens here. Reads and soft writes use debug_read_text and
+# debug_write_text at the full declared length; forces and programs built
+# before those exports keep this 126-unit window.
 STRING_DATATYPES = frozenset(["STRING", "WSTRING"])
 DEBUG_STRING_CAP = 126
 
@@ -250,6 +251,72 @@ def _read_text(args: Any, arr: int, elem: int, datatype: str) -> Tuple[int, Opti
     return STATUS_OK, _decode_text(datatype, bytes(out))
 
 
+def _text_raw(datatype: str, value: Any, cap: int) -> Optional[bytes]:
+    """A value's STRING bytes (UTF-8) or WSTRING UTF-16LE units, cut to `cap`
+    code units without splitting a character or a surrogate pair."""
+    if datatype.upper() == "WSTRING":
+        if isinstance(value, str):
+            raw = value.encode("utf-16-le")
+        elif isinstance(value, (bytes, bytearray)):
+            raw = bytes(value)
+        else:
+            return None
+        if len(raw) % 2:
+            log_warn("WSTRING payload has an odd byte count; dropping the trailing byte")
+            raw = raw[:-1]
+        units = min(len(raw) // 2, cap)
+        if units > 0 and units < len(raw) // 2:
+            last = int.from_bytes(raw[(units - 1) * 2 : units * 2], "little")
+            if 0xD800 <= last <= 0xDBFF:
+                units -= 1
+        return raw[: units * 2]
+    raw = bytes(value) if isinstance(value, (bytes, bytearray)) else str(value).encode("utf-8")
+    return _truncate_utf8(raw, cap)
+
+
+def _write_text(args: Any, arr: int, elem: int, datatype: str, value: Any) -> int:
+    """Write a STRING/WSTRING at its full declared length through
+    args.debug_write_text. Returns its status; STATUS_NOT_LOADED means the
+    program was built before it and the caller falls back to debug_write."""
+    fn = getattr(args, "debug_write_text", None)
+    read = getattr(args, "debug_read_text", None)
+    if not fn or not read:
+        return STATUS_NOT_LOADED
+    info = PlcTextChunk()
+    none = (ctypes.c_uint8 * 1)()
+    try:
+        status = read(
+            ctypes.c_uint8(arr),
+            ctypes.c_uint16(elem),
+            ctypes.c_uint16(0),
+            ctypes.c_uint16(0),
+            ctypes.cast(none, ctypes.POINTER(ctypes.c_uint8)),
+            ctypes.c_uint16(0),
+            ctypes.byref(info),
+        )
+    except Exception as e:
+        log_error(f"debug_read_text({arr}, {elem}) raised: {e}")
+        return 0
+    if status != STATUS_OK:
+        return status
+    raw = _text_raw(datatype, value, info.cap)
+    if raw is None:
+        log_warn(f"debug_write_text({arr}, {elem}, {datatype}): cannot encode {value!r}")
+        return 0
+    unit = 2 if datatype.upper() == "WSTRING" else 1
+    buf = (ctypes.c_uint8 * max(len(raw), 1))(*raw)
+    try:
+        return fn(
+            ctypes.c_uint8(arr),
+            ctypes.c_uint16(elem),
+            ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint8)),
+            ctypes.c_uint16(len(raw) // unit),
+        )
+    except Exception as e:
+        log_error(f"debug_write_text({arr}, {elem}) raised: {e}")
+        return 0
+
+
 def debug_read_value(args: Any, arr: int, elem: int, datatype: str) -> Optional[Any]:
     """Read a single PLC variable through args.debug_read (strings through
     args.debug_read_text, at full length) and decode it into a Python value
@@ -310,6 +377,14 @@ def debug_write_value(args: Any, arr: int, elem: int, datatype: str, value: Any)
         return False
 
     if _is_string(datatype):
+        status = _write_text(args, arr, elem, datatype, value)
+        if status != STATUS_NOT_LOADED:
+            return status == STATUS_OK
+        _warn_once(
+            "no-write-text",
+            "program built without debug_write_text; strings written up to "
+            f"{DEBUG_STRING_CAP} characters",
+        )
         raw = _encode_string(datatype, value)
         if raw is None:
             log_warn(f"debug_write({arr}, {elem}, {datatype}): cannot encode {value!r}")

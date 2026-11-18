@@ -7,7 +7,7 @@
 #include "debug_write_journal.h"
 
 #include "../lib/strucpp_abi.hpp" /* strucpp::debug::STATUS_OK */
-#include "image_tables.h"  /* ext_strucpp_debug_set / _write / _locate */
+#include "image_tables.h"  /* ext_strucpp_debug_set / _write / _write_text / _locate */
 #include "journal_buffer.h" /* journal_write_* / journal_force_set/clear  */
 #include "utils/rt_mutex.h"
 
@@ -16,6 +16,7 @@ extern "C" {
 }
 
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <pthread.h>
 
@@ -28,12 +29,17 @@ constexpr size_t   DBGW_MAX_ENTRIES = 128;
 constexpr uint16_t DBGW_MAX_BYTES   = 256;
 constexpr uint8_t DBGW_STATUS_OK = strucpp::debug::STATUS_OK;
 
+/* A text write's value lives on the heap (a WSTRING(65535) is 131070 bytes).
+ * The drain leaves it there; the writer that next claims the slot, or reset,
+ * frees it, so the dispatcher never calls free(). */
 struct DbgwEntry {
     uint8_t  arr;
     uint16_t elem;
     uint8_t  op;
     uint16_t len;
     uint8_t  bytes[DBGW_MAX_BYTES];
+    uint16_t text_count;  /* code units */
+    uint8_t *text;        /* DBGW_OP_TEXT value, or a stale one awaiting free */
 };
 
 DbgwEntry           g_dbgw[DBGW_MAX_ENTRIES];
@@ -190,6 +196,26 @@ bool apply_global(uint8_t arr, uint16_t elem, uint8_t op, const uint8_t *bytes,
     }
 }
 
+/* Claim the next slot under g_dbgw_lock, freeing a text value left from an
+ * earlier drain. Null when the queue is full (logged once per cycle). */
+DbgwEntry *claim_slot_locked(size_t *index)
+{
+    size_t n = g_dbgw_count.load(std::memory_order_relaxed);
+    if (n >= DBGW_MAX_ENTRIES) {
+        if (!g_overflow_logged) {
+            log_warn("[debug-write] queue full (%zu) — external write dropped and not "
+                     "retried; further drops this cycle are not logged", DBGW_MAX_ENTRIES);
+            g_overflow_logged = true;
+        }
+        return nullptr;
+    }
+    DbgwEntry *e = &g_dbgw[n];
+    free(e->text);
+    e->text = nullptr;
+    *index  = n;
+    return e;
+}
+
 /* Route one write by the leaf's classification, exactly as the drain does. */
 bool apply_entry(uint8_t arr, uint16_t elem, uint8_t op, const uint8_t *bytes,
                  uint16_t len)
@@ -212,17 +238,12 @@ extern "C" int runtime_external_write(uint8_t arr, uint16_t elem, uint8_t op,
                                       const uint8_t *bytes, uint16_t len)
 {
     pthread_mutex_lock(&g_dbgw_lock);
-    size_t n = g_dbgw_count.load(std::memory_order_relaxed);
-    if (n >= DBGW_MAX_ENTRIES) {
+    size_t     n = 0;
+    DbgwEntry *e = claim_slot_locked(&n);
+    if (e == nullptr) {
         pthread_mutex_unlock(&g_dbgw_lock);
-        if (!g_overflow_logged) {
-            log_warn("[debug-write] queue full (%zu) — external write dropped and not "
-                     "retried; further drops this cycle are not logged", DBGW_MAX_ENTRIES);
-            g_overflow_logged = true;
-        }
         return -1;
     }
-    DbgwEntry *e = &g_dbgw[n];
     e->arr = arr;
     e->elem = elem;
     e->op = op;
@@ -230,6 +251,37 @@ extern "C" int runtime_external_write(uint8_t arr, uint16_t elem, uint8_t op,
     e->len = cl;
     if (bytes && cl) memcpy(e->bytes, bytes, cl);
     /* release: the entry contents happen-before the count the drainer reads */
+    g_dbgw_count.store(n + 1, std::memory_order_release);
+    pthread_mutex_unlock(&g_dbgw_lock);
+    return 0;
+}
+
+extern "C" int runtime_external_write_text(uint8_t arr, uint16_t elem, const uint8_t *data,
+                                           uint16_t count, size_t nbytes)
+{
+    if (ext_strucpp_debug_write_text == nullptr) return -1;
+    /* Copied before the lock: a large value never holds the queue up. */
+    uint8_t *copy = static_cast<uint8_t *>(malloc(nbytes > 0 ? nbytes : 1));
+    if (copy == nullptr) {
+        log_warn("[debug-write] no memory for a %zu-byte string write; dropped", nbytes);
+        return -1;
+    }
+    if (data && nbytes) memcpy(copy, data, nbytes);
+
+    pthread_mutex_lock(&g_dbgw_lock);
+    size_t     n = 0;
+    DbgwEntry *e = claim_slot_locked(&n);
+    if (e == nullptr) {
+        pthread_mutex_unlock(&g_dbgw_lock);
+        free(copy);
+        return -1;
+    }
+    e->arr        = arr;
+    e->elem       = elem;
+    e->op         = DBGW_OP_TEXT;
+    e->len        = 0;
+    e->text_count = count;
+    e->text       = copy;
     g_dbgw_count.store(n + 1, std::memory_order_release);
     pthread_mutex_unlock(&g_dbgw_lock);
     return 0;
@@ -244,6 +296,12 @@ extern "C" void debug_write_journal_drain(void)
     size_t n = g_dbgw_count.load(std::memory_order_relaxed);
     for (size_t i = 0; i < n; ++i) {
         const DbgwEntry *e = &g_dbgw[i];
+        if (e->op == DBGW_OP_TEXT) {
+            /* A STRING/WSTRING is never located: straight to the variable. */
+            if (ext_strucpp_debug_write_text && e->text)
+                ext_strucpp_debug_write_text(e->arr, e->elem, e->text, e->text_count);
+            continue;
+        }
         apply_entry(e->arr, e->elem, e->op, e->bytes, e->len);
     }
     g_dbgw_count.store(0, std::memory_order_release);
@@ -271,6 +329,10 @@ extern "C" void debug_write_journal_set_direct_window(bool open)
 extern "C" void debug_write_journal_reset(void)
 {
     pthread_mutex_lock(&g_dbgw_lock);
+    for (DbgwEntry &e : g_dbgw) {
+        free(e.text);
+        e.text = nullptr;
+    }
     g_dbgw_count.store(0, std::memory_order_release);
     g_overflow_logged = false;
     pthread_mutex_unlock(&g_dbgw_lock);

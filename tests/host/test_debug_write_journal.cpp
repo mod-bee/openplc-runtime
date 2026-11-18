@@ -65,7 +65,23 @@ static int stub_debug_locate(uint8_t, uint16_t elem, uint8_t *area, uint8_t *siz
     return 1;
 }
 
+// strucpp_debug_write_text stand-in: records what the drain applied.
+static std::vector<uint8_t> g_text_bytes;
+static uint16_t             g_text_count = 0;
+static int                  g_text_writes = 0;
+static size_t               g_text_unit  = 1;   // the leaf's code-unit width
+
+static uint8_t stub_debug_write_text(uint8_t, uint16_t, const uint8_t *data, uint16_t count)
+{
+    ++g_text_writes;
+    g_text_count = count;
+    g_text_bytes.assign(data, data + (size_t)count * g_text_unit);
+    return 0x7E;
+}
+
 extern "C" {
+uint8_t (*ext_strucpp_debug_write_text)(uint8_t, uint16_t, const uint8_t *, uint16_t) =
+    stub_debug_write_text;
 uint8_t (*ext_strucpp_debug_set)(uint8_t, uint16_t, bool, const uint8_t *, uint16_t) =
     stub_debug_set;
 uint8_t (*ext_strucpp_debug_write)(uint8_t, uint16_t, const uint8_t *, uint16_t) =
@@ -128,7 +144,54 @@ static void reset()
     g_located_elem       = 0xFFFF;
     g_journal_result     = 0;
     g_journal_writes     = 0;
+    g_text_bytes.clear();
+    g_text_count  = 0;
+    g_text_writes = 0;
+    g_text_unit   = 1;
+    ext_strucpp_debug_write_text = stub_debug_write_text;
     debug_write_journal_set_direct_window(true);
+}
+
+static void case_text_write_carries_the_whole_value()
+{
+    g_case = "a STRING(320) write of 300 characters is applied whole";
+    reset();
+    std::vector<uint8_t> text(300);
+    for (size_t i = 0; i < text.size(); ++i) text[i] = (uint8_t)('a' + i % 26);
+    CHECK(runtime_external_write_text(0, 5, text.data(), 300, text.size()) == 0, "queued");
+    debug_write_journal_drain();
+    CHECK(g_text_writes == 1 && g_text_count == 300, "one write of 300 units");
+    CHECK(g_text_bytes == text, "every byte");
+
+    g_case = "a WSTRING of 40000 units (80000 bytes, past any uint16 byte count)";
+    reset();
+    g_text_unit = 2;
+    std::vector<uint8_t> wide(80000);
+    for (size_t i = 0; i < wide.size(); ++i) wide[i] = (uint8_t)(i * 7);
+    CHECK(runtime_external_write_text(0, 6, wide.data(), 40000, wide.size()) == 0, "queued");
+    debug_write_journal_drain();
+    CHECK(g_text_count == 40000 && g_text_bytes == wide, "every unit");
+
+    g_case = "text writes keep their place among the other writes";
+    reset();
+    uint8_t v[2] = {1, 0};
+    for (int round = 0; round < 3; ++round) {   // slots are reused after each drain
+        CHECK(runtime_external_write(0, 1, DBGW_OP_WRITE, v, 2) == 0, "scalar queued");
+        CHECK(runtime_external_write_text(0, 5, text.data(), 300, text.size()) == 0, "text queued");
+        debug_write_journal_drain();
+    }
+    CHECK(g_global_writes.size() == 3 && g_text_writes == 3, "all applied");
+}
+
+static void case_text_write_refused_without_the_export()
+{
+    g_case = "a program without strucpp_debug_write_text refuses the text write";
+    reset();
+    ext_strucpp_debug_write_text = nullptr;
+    uint8_t t[3] = {'a', 'b', 'c'};
+    CHECK(runtime_external_write_text(0, 5, t, 3, 3) == -1, "refused at once, so the caller can fall back");
+    debug_write_journal_drain();
+    CHECK(g_text_writes == 0, "nothing applied");
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +285,8 @@ int main()
     case_now_reports_a_refused_global();
     case_now_routes_a_located_leaf();
     case_now_refused_outside_the_window();
+    case_text_write_carries_the_whole_value();
+    case_text_write_refused_without_the_export();
     reset();
 
     if (g_failures == 0)

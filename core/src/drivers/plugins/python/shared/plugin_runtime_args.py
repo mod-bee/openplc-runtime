@@ -168,6 +168,18 @@ class PluginRuntimeArgs(ctypes.Structure):
                 ctypes.POINTER(PlcTextChunk),
             ),
         ),
+        # Full-length STRING/WSTRING soft write: uint8 (*)(arr, elem, data,
+        # count units); 0x83 when the program lacks it.
+        (
+            "debug_write_text",
+            ctypes.CFUNCTYPE(
+                ctypes.c_uint8,
+                ctypes.c_uint8,
+                ctypes.c_uint16,
+                ctypes.POINTER(ctypes.c_uint8),
+                ctypes.c_uint16,
+            ),
+        ),
     ]
 
     def validate_pointers(self):

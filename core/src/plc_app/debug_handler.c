@@ -335,9 +335,9 @@ static void debugGetText(uint8_t *frame, size_t *frame_len, size_t length)
         const uint16_t elem     = read_u16_be(&frame[2]);
         offset                  = read_u16_be(&frame[4]);
         uint16_t       max      = read_u16_be(&frame[6]);
-        const uint16_t data_cap = (uint16_t)(MAX_DEBUG_FRAME - TEXT_HDR);
-        if (max > data_cap) max = data_cap;
-        ext_strucpp_debug_read_text(arr, elem, offset, max, &frame[TEXT_HDR], data_cap, &info);
+        const size_t   room     = MAX_DEBUG_FRAME - TEXT_HDR; /* bytes */
+        if (max > room) max = (uint16_t)room;
+        ext_strucpp_debug_read_text(arr, elem, offset, max, &frame[TEXT_HDR], (uint16_t)room, &info);
         if (info.status != MB_DEBUG_SUCCESS) info.count = 0;
     }
 

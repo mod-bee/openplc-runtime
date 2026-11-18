@@ -112,6 +112,18 @@ typedef uint8_t  (*plugin_debug_write_func_t)(uint8_t arr, uint16_t elem,
 typedef plc_debug_read_text_func_t plugin_debug_read_text_func_t;
 
 /**
+ * @brief Full-length STRING/WSTRING soft write
+ *
+ * debug_write_text(arr, elem, data, count) queues a write of `count` code
+ * units from `data` (STRING bytes, WSTRING little-endian units), cut to the
+ * declared length, applied like debug_write at the next no-task window.
+ * Returns 0x7E queued, 0x81 not a string or out of range, 0x82 queue full or
+ * out of memory, 0x83 when the program lacks it (debug_write then still takes
+ * 126 units).
+ */
+typedef plc_debug_write_text_func_t plugin_debug_write_text_func_t;
+
+/**
  * @brief PLC stop request from a plugin
  *
  * Asks the runtime to transition from RUNNING to STOPPED through the normal
@@ -338,6 +350,9 @@ typedef struct
 
     /* Chunked STRING/WSTRING read — see plugin_debug_read_text_func_t. */
     plugin_debug_read_text_func_t debug_read_text;
+
+    /* Full-length STRING/WSTRING write — see plugin_debug_write_text_func_t. */
+    plugin_debug_write_text_func_t debug_write_text;
 } plugin_runtime_args_t;
 
 #endif /* PLUGIN_TYPES_H */

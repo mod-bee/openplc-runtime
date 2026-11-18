@@ -25,10 +25,10 @@
 #include <cstring>
 #include <pthread.h>
 
-// FC 0x4F (chunked STRING/WSTRING read): debug_dispatch.hpp exports
-// strucpp_debug_read_text and defines STRUCPP_SHIM_HAS_DEBUG_TEXT. Its chunk
-// struct and signature are held here to the runtime's C mirror; with older
-// headers the symbol is absent and the runtime answers FC 0x4F with 0x83.
+// Full-length strings: debug_dispatch.hpp exports strucpp_debug_read_text (FC
+// 0x4F) and strucpp_debug_write_text and defines STRUCPP_SHIM_HAS_DEBUG_TEXT.
+// The chunk struct and both signatures are held here to the runtime's C mirror;
+// with older headers both are absent: FC 0x4F answers 0x83, writes keep 126.
 #ifdef STRUCPP_SHIM_HAS_DEBUG_TEXT
 #include "../src/plc_app/debug_text.h"
 
@@ -43,6 +43,8 @@ static_assert(strucpp::debug::TAG_WSTRING == PLC_TEXT_TAG_WSTRING, "TAG_WSTRING"
 __attribute__((used)) static uint8_t (*const shim_debug_read_text)(
     uint8_t, uint16_t, uint16_t, uint16_t, uint8_t*, uint16_t,
     strucpp_text_chunk*) = &strucpp_debug_read_text;
+__attribute__((used)) static uint8_t (*const shim_debug_write_text)(
+    uint8_t, uint16_t, const uint8_t*, uint16_t) = &strucpp_debug_write_text;
 #endif  // STRUCPP_SHIM_HAS_DEBUG_TEXT
 
 // External linkage so generated_debug.cpp can reference &g_config.X.Y at
@@ -241,8 +243,11 @@ static uint16_t retain_read_leaf_live(uint8_t arr, uint16_t elem, uint8_t* dest)
 }
 
 static uint16_t retain_read_text_live(uint8_t arr, uint16_t elem, uint8_t* dest, uint16_t cap) {
-    return retain_live::read_text_stable(strucpp::debug::handle_read_text, arr, elem, dest, cap,
-                                         kLiveTries);
+    // A lambda, not the name: handle_read_text is a template in newer headers.
+    const auto read = [](uint8_t a, uint16_t e, uint8_t* d, uint16_t c) {
+        return strucpp::debug::handle_read_text(a, e, d, c);
+    };
+    return retain_live::read_text_stable(read, arr, elem, dest, cap, kLiveTries);
 }
 
 /** strucpp_retain_pack2, safe while the tasks run (see above). */

@@ -8,33 +8,35 @@
 #ifndef RETAIN_LIVE_READ_HPP
 #define RETAIN_LIVE_READ_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <vector>
 
 namespace retain_live {
 
-/** read_text(arr, elem, dest, cap_bytes) -> bytes. Retries up to `tries`
+/** read_text(arr, elem, dest, cap_bytes) -> bytes, at whatever widths the
+ *  reader uses (byte counts are never narrowed here). Retries up to `tries`
  *  times until two consecutive reads agree; returns the last read's length.
  *  The compare buffer grows to the longest string seen, per thread (the retain
  *  store's, never a scan). Only an allocation failure skips the check. */
-template <typename ReadText>
-uint16_t read_text_stable(ReadText read_text, uint8_t arr, uint16_t elem, uint8_t* dest,
-                          uint16_t cap, int tries) {
+template <typename ReadText, typename Bytes>
+auto read_text_stable(ReadText read_text, uint8_t arr, uint16_t elem, uint8_t* dest, Bytes cap,
+                      int tries) -> decltype(read_text(arr, elem, dest, cap)) {
     static thread_local std::vector<uint8_t> again;
     bool compare = true;
-    if (again.size() < cap) {
+    if (again.size() < static_cast<size_t>(cap)) {
         try {
-            again.resize(cap);
+            again.resize(static_cast<size_t>(cap));
         } catch (...) {
             compare = false;
         }
     }
-    uint16_t n = 0;
+    decltype(read_text(arr, elem, dest, cap)) n = 0;
     for (int t = 0; t < tries; ++t) {
         n = read_text(arr, elem, dest, cap);
         if (!compare) return n;
-        const uint16_t m = read_text(arr, elem, again.data(), cap);
+        const auto m = read_text(arr, elem, again.data(), cap);
         if (m == n && std::memcmp(dest, again.data(), n) == 0) return n;
     }
     return n;

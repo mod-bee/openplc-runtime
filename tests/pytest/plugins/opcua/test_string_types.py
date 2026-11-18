@@ -229,6 +229,60 @@ class TestFullLength:
         assert debug_read_value(args, 0, 21, "STRING") is None
 
 
+class FakeWriteTextArgs(FakeTextArgs):
+    """Adds debug_write_text (interface 1b): records count and the bytes."""
+
+    def __init__(self, cap: int, wide: bool = False, write_status: int = 0x7E):
+        super().__init__(b"", cap=cap, wide=wide)
+        self.write_status = write_status
+        self.text_written = None
+
+    def debug_write_text(self, arr, elem, data, count):
+        count = int(getattr(count, "value", count))
+        unit = 2 if self.wide else 1
+        self.text_written = (count, bytes(bytearray(data[: count * unit])))
+        return self.write_status
+
+
+class TestFullLengthWrite:
+    def test_string_320_writes_all_300_characters(self):
+        args = FakeWriteTextArgs(cap=320)
+        text = "".join(chr(ord("a") + i % 26) for i in range(300))
+        assert debug_write_value(args, 0, 21, "STRING", text) is True
+        assert args.text_written == (300, text.encode())
+        assert args.written is None  # not the 126 path
+
+    def test_wstring_writes_all_units(self):
+        args = FakeWriteTextArgs(cap=300, wide=True)
+        assert debug_write_value(args, 0, 22, "WSTRING", "ü" * 280) is True
+        assert args.text_written == (280, ("ü" * 280).encode("utf-16-le"))
+
+    def test_a_value_over_the_cap_is_cut_on_a_character_boundary(self):
+        args = FakeWriteTextArgs(cap=320)
+        text = "a" * 319 + "é" * 10  # 'é' is two bytes: byte 320 is mid-character
+        assert debug_write_value(args, 0, 21, "STRING", text) is True
+        count, raw = args.text_written
+        assert count == 319 and raw == b"a" * 319
+        raw.decode("utf-8")
+
+    def test_wstring_over_the_cap_keeps_surrogate_pairs_whole(self):
+        args = FakeWriteTextArgs(cap=5, wide=True)
+        assert debug_write_value(args, 0, 22, "WSTRING", "abcd\U0001F600") is True
+        count, raw = args.text_written
+        assert count == 4
+        raw.decode("utf-16-le")
+
+    def test_older_program_falls_back_to_the_126_window(self):
+        args = FakeWriteTextArgs(cap=320, write_status=0x83)
+        text = "x" * 300
+        assert debug_write_value(args, 0, 21, "STRING", text) is True
+        assert args.written == bytes([126]) + b"x" * 126
+
+    def test_a_refusal_is_reported(self):
+        args = FakeWriteTextArgs(cap=320, write_status=0x81)
+        assert debug_write_value(args, 0, 21, "STRING", "hello") is False
+
+
 class TestTypeMapping:
     def test_string_maps_to_ua_string(self):
         assert map_plc_to_opcua_type("STRING") == ua.VariantType.String

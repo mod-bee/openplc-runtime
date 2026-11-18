@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Autonomy®
 
 /**
- * Chunked STRING/WSTRING read (FC 0x4F), the runtime side.
+ * Full-length STRING/WSTRING access (FC 0x4F reads, plugin writes), the runtime side.
  *
  * C mirror of STruC++'s `strucpp_text_chunk` (debug_dispatch.hpp), which the
  * runtime cannot include. Same field order and widths; the shim
@@ -37,6 +37,12 @@ extern "C"
     typedef uint8_t (*plc_debug_read_text_func_t)(uint8_t arr, uint16_t elem, uint16_t offset,
                                                   uint16_t max, uint8_t *data, uint16_t data_cap,
                                                   plc_text_chunk_t *info);
+
+    /** strucpp_debug_write_text(): sets (does not force) a STRING/WSTRING leaf to
+     *  `count` code units from `data`, cut to the declared length. Returns 0x7E,
+     *  0x81 not a string or out of range, 0x83 not loaded. */
+    typedef uint8_t (*plc_debug_write_text_func_t)(uint8_t arr, uint16_t elem,
+                                                   const uint8_t *data, uint16_t count);
 
 #ifdef __cplusplus
 }

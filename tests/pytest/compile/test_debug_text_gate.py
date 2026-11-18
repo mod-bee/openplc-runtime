@@ -27,7 +27,7 @@ _REPO = Path(__file__).resolve().parents[3]
 _SHIM = _REPO / "core" / "strucpp_runtime" / "runtime_v4_entry.cpp"
 _IMAGE_TABLES = _REPO / "core" / "src" / "plc_app" / "image_tables.cpp"
 _MACRO = "STRUCPP_SHIM_HAS_DEBUG_TEXT"
-_NAMES = ("strucpp_debug_read_text", "strucpp_text_chunk")
+_NAMES = ("strucpp_debug_read_text", "strucpp_debug_write_text", "strucpp_text_chunk")
 
 _CXX = shutil.which("g++") or shutil.which("c++") or shutil.which("clang++")
 
@@ -50,6 +50,7 @@ typedef struct {{
 }} strucpp_text_chunk;
 uint8_t strucpp_debug_read_text(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max,
                                 uint8_t* data, uint16_t data_cap, strucpp_text_chunk* info);
+uint8_t strucpp_debug_write_text(uint8_t arr, uint16_t elem, const uint8_t* data, uint16_t count);
 }}
 #define {macro} 1
 """
@@ -156,8 +157,9 @@ def test_older_headers_skip_the_block(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
-def test_the_runtime_resolves_the_symbol_as_optional():
+@pytest.mark.parametrize("name", ("strucpp_debug_read_text", "strucpp_debug_write_text"))
+def test_the_runtime_resolves_the_symbols_as_optional(name):
     source = _IMAGE_TABLES.read_text(encoding="utf-8")
-    assert re.search(r'resolve\(pm,\s*"strucpp_debug_read_text",\s*false\)', source), (
-        "strucpp_debug_read_text must be optional: a program built before it still loads"
+    assert re.search(r'resolve\(pm,\s*"' + name + r'",\s*false\)', source), (
+        f"{name} must be optional: a program built before it still loads"
     )
