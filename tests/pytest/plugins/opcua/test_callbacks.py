@@ -219,3 +219,39 @@ class TestRolePermissionMapping:
         role_perm = getattr(perms, role, "")
         assert "r" in role_perm
         assert "w" not in role_perm
+
+
+class TestReadOnlyLeaf:
+    """A write to a CONSTANT is refused at write time with BadNotWritable,
+    whoever writes it: the program may not have been loaded when the address
+    space was built, so the node itself cannot be relied on."""
+
+    @staticmethod
+    def _event(node_id):
+        write = SimpleNamespace(NodeId=node_id, Value=SimpleNamespace(Value="x"))
+        return SimpleNamespace(is_external=True, user=None,
+                               request_params=SimpleNamespace(NodesToWrite=[write]))
+
+    def _handler(self, read_only):
+        perms = {"PLC.k": VariablePermissions.from_dict({"viewer": "rw", "operator": "rw", "engineer": "rw"})}
+        return PermissionCallbackHandler(perms, {"ns=2;s=PLC.k": "PLC.k"}, read_only=read_only)
+
+    def test_a_constant_is_not_writable(self):
+        import asyncio
+        from asyncua import ua
+        handler = self._handler(lambda sid: sid == "PLC.k")
+        with pytest.raises(ua.uaerrors.BadNotWritable):
+            asyncio.run(handler._on_pre_write(self._event("ns=2;s=PLC.k"), None))
+
+    def test_a_writable_leaf_passes(self):
+        import asyncio
+        handler = self._handler(lambda sid: False)
+        asyncio.run(handler._on_pre_write(self._event("ns=2;s=PLC.k"), None))
+
+    def test_without_the_check_permissions_alone_decide(self):
+        import asyncio
+        handler = PermissionCallbackHandler(
+            {"PLC.k": VariablePermissions.from_dict({"viewer": "rw", "operator": "rw", "engineer": "rw"})},
+            {"ns=2;s=PLC.k": "PLC.k"},
+        )
+        asyncio.run(handler._on_pre_write(self._event("ns=2;s=PLC.k"), None))

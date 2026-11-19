@@ -10,7 +10,7 @@ via PreRead and PreWrite callbacks.
 
 import os
 import sys
-from typing import Dict, Any, Optional
+from typing import Any, Callable, Dict, Optional
 
 from asyncua import Server, ua
 from asyncua.server.internal_server import InternalServer
@@ -52,7 +52,8 @@ class PermissionCallbackHandler:
     def __init__(
         self,
         node_permissions: Dict[str, VariablePermissions],
-        nodeid_to_variable: Dict[Any, str]
+        nodeid_to_variable: Dict[Any, str],
+        read_only: Optional[Callable[[str], bool]] = None,
     ):
         """
         Initialize the permission callback handler.
@@ -60,9 +61,12 @@ class PermissionCallbackHandler:
         Args:
             node_permissions: Dict mapping node_id string to VariablePermissions
             nodeid_to_variable: Dict mapping NodeId to variable name string
+            read_only: True for a node whose PLC variable is a CONSTANT, asked
+                at write time (optional)
         """
         self.node_permissions = node_permissions
         self.nodeid_to_variable = nodeid_to_variable
+        self.read_only = read_only
 
     async def register(self, server: Server) -> bool:
         """
@@ -217,6 +221,12 @@ class PermissionCallbackHandler:
                 # Log for debugging
                 log_debug(f"NodeId {node_id} not found in mapping")
                 continue
+
+            # A CONSTANT is not writable for anyone: refused before any
+            # permission, as the variable itself cannot change.
+            if self.read_only is not None and self.read_only(simple_node_id):
+                log_warn(f"DENY write to CONSTANT node {simple_node_id}")
+                raise ua.uaerrors.BadNotWritable()
 
             # Get permissions for this node
             permissions = self._get_permissions_for_node(simple_node_id)

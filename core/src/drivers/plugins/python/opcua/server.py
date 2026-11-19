@@ -35,6 +35,7 @@ try:
     from .user_manager import OpenPLCUserManager
     from .callbacks import PermissionCallbackHandler
     from .opcua_types import VariableNode
+    from .opcua_memory import is_read_only
 except ImportError:
     from opcua_logging import log_info, log_warn, log_error, log_debug
     from opcua_security import OpcuaSecurityManager
@@ -44,6 +45,7 @@ except ImportError:
     from user_manager import OpenPLCUserManager
     from callbacks import PermissionCallbackHandler
     from opcua_types import VariableNode
+    from opcua_memory import is_read_only
 
 from shared import SafeBufferAccess
 from shared.plugin_config_decode.opcua_config_model import OpcuaConfig
@@ -411,6 +413,22 @@ class OpcuaServerManager:
             traceback.print_exc()
             return False
 
+    def _read_only_check(self):
+        """node_id -> True when its PLC variable is a CONSTANT (asked at write
+        time, when the program is loaded)."""
+        args = getattr(self.buffer_accessor, "runtime_args", None)
+        by_node_id = {}
+        for vn in self.variable_nodes.values():
+            node_id = self.nodeid_to_variable.get(vn.node.nodeid)
+            if node_id is not None:
+                by_node_id[node_id] = vn
+
+        def check(node_id: str) -> bool:
+            vn = by_node_id.get(node_id)
+            return vn is not None and is_read_only(args, vn.arr, vn.elem, vn.datatype)
+
+        return check
+
     async def _register_callbacks(self) -> bool:
         """
         Register permission callbacks for access control.
@@ -429,7 +447,8 @@ class OpcuaServerManager:
 
             self.callback_handler = PermissionCallbackHandler(
                 node_permissions=self.node_permissions,
-                nodeid_to_variable=self.nodeid_to_variable
+                nodeid_to_variable=self.nodeid_to_variable,
+                read_only=self._read_only_check(),
             )
 
             if not await self.callback_handler.register(self.server):
