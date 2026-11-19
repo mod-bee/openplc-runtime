@@ -9,14 +9,14 @@
 #include <stddef.h>
 
 #include "located_globals.h"
-
-static int g_failures = 0;
+#include "unity.h"
 
 #define CHECK(cond, msg, ...)                                                  \
     do {                                                                       \
         if (!(cond)) {                                                         \
-            printf("  FAIL: " msg "\n", ##__VA_ARGS__);                        \
-            ++g_failures;                                                      \
+            char why_[256];                                                    \
+            snprintf(why_, sizeof why_, msg, ##__VA_ARGS__);                   \
+            TEST_FAIL_MESSAGE(why_);                                           \
         }                                                                      \
     } while (0)
 
@@ -38,9 +38,8 @@ static void reset(void)
     for (uint32_t i = 0; i < MAX_VARS; ++i) g_lv[i] = NULL;
 }
 
-static void test_globals_first(void)
+void test_globals_first(void)
 {
-    printf("test_globals_first (the reported regression)\n");
     reset();
     g_lv[0] = S(0);   /* GLOBALVAR  AT %MD0    — config global */
     g_lv[1] = S(1);   /* GLOBALBOOL AT %MX0.0  — config global */
@@ -59,9 +58,8 @@ static void test_globals_first(void)
 /* ---------------------------------------------------------------------------
  * Order independence — the property the old code lacked.
  * ------------------------------------------------------------------------- */
-static void test_ordering_independence(void)
+void test_ordering_independence(void)
 {
-    printf("test_ordering_independence\n");
 
     /* (a) globals last */
     {
@@ -90,9 +88,8 @@ static void test_ordering_independence(void)
     }
 }
 
-static void test_multi_program(void)
+void test_multi_program(void)
 {
-    printf("test_multi_program\n");
     reset();
     for (uint32_t i = 0; i < 7; ++i) g_lv[i] = S(i);
     const void *globals[] = { S(0), S(1), S(2) };
@@ -107,9 +104,8 @@ static void test_multi_program(void)
 }
 
 /* ------------------------------------------------------------------------- */
-static void test_degradation_and_edges(void)
+void test_degradation_and_edges(void)
 {
-    printf("test_degradation_and_edges\n");
 
     /* Older program: no globals array at all (accessors absent). The caller
      * warns and services no globals; the join must simply report zero. */
@@ -167,9 +163,8 @@ static void test_degradation_and_edges(void)
     }
 }
 
-static void test_inconsistency_detected(void)
+void test_inconsistency_detected(void)
 {
-    printf("test_inconsistency_detected\n");
     reset();
     g_lv[0] = S(0);
     g_lv[1] = S(1);
@@ -185,9 +180,8 @@ static void test_inconsistency_detected(void)
           matched);
 }
 
-static void test_unbound_skipped(void)
+void test_unbound_skipped(void)
 {
-    printf("test_unbound_skipped\n");
     reset();
     g_lv[0] = S(0);
     g_lv[1] = NULL;   /* never bound */
@@ -201,21 +195,5 @@ static void test_unbound_skipped(void)
     CHECK(idx[0] == 0 && idx[1] == 2, "expected [0,2], got [%u,%u]", idx[0], idx[1]);
 }
 
-int main(void)
-{
-    printf("=== located_globals_join_ex unit tests ===\n");
-    test_globals_first();
-    test_ordering_independence();
-    test_multi_program();
-    test_degradation_and_edges();
-    test_inconsistency_detected();
-    test_unbound_skipped();
-
-    if (g_failures == 0)
-    {
-        printf("=== all tests passed ===\n");
-        return 0;
-    }
-    printf("=== %d check(s) FAILED ===\n", g_failures);
-    return 1;
-}
+void setUp(void) { reset(); }
+void tearDown(void) {}

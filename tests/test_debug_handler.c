@@ -9,6 +9,7 @@
 #include "debug_handler.h"
 #include "debug_read_guard.h" /* links debug_read_guard.c */
 #include "debug_handler_mocks.h"
+#include "debug_write_journal.h" /* DBGW_OP_* (the mocks stand in for its queue) */
 #include "unity.h"
 
 #include <stdbool.h>
@@ -28,6 +29,7 @@ extern uint8_t (*ext_strucpp_debug_array_count)(void);
 
 #define MB_DEBUG_SUCCESS              0x7E
 #define MB_DEBUG_ERROR_OUT_OF_BOUNDS  0x81
+#define MB_DEBUG_ERROR_OUT_OF_MEMORY  0x82
 #define MB_DEBUG_ERROR_NOT_LOADED     0x83
 
 /* Wire frame buffer. Sized comfortably within the runtime's
@@ -109,7 +111,10 @@ void test_debug_info_when_symbols_not_loaded_returns_not_loaded(void)
  *  FC 0x42 — DEBUG_SET (force / unforce)
  * ======================================================================= */
 
-void test_debug_set_force_passes_through_to_so(void)
+/* FC 0x42 does not touch the variable from the socket thread: it queues the
+ * force on the debug-write journal, which the dispatcher applies at the
+ * no-task-running window. */
+void test_debug_set_force_is_queued(void)
 {
     mock_debug_set_arr_count(1);
     mock_debug_set_elem_count(0, 4);
@@ -129,17 +134,18 @@ void test_debug_set_force_passes_through_to_so(void)
     TEST_ASSERT_EQUAL_UINT8(MB_DEBUG_SUCCESS,   frame[1]);
     TEST_ASSERT_EQUAL_size_t(2, len);
 
-    const mock_debug_set_capture_t *cap = mock_debug_last_set();
+    const mock_external_write_capture_t *cap = mock_debug_last_external_write();
     TEST_ASSERT_TRUE(cap->called);
     TEST_ASSERT_EQUAL_UINT8(0,    cap->arr);
     TEST_ASSERT_EQUAL_UINT16(2,   cap->elem);
-    TEST_ASSERT_TRUE(cap->forcing);
+    TEST_ASSERT_EQUAL_UINT8(DBGW_OP_FORCE, cap->op);
     TEST_ASSERT_EQUAL_UINT16(2,   cap->len);
     TEST_ASSERT_EQUAL_UINT8(0xCA, cap->bytes[0]);
     TEST_ASSERT_EQUAL_UINT8(0xFE, cap->bytes[1]);
+    TEST_ASSERT_FALSE(mock_debug_last_set()->called); /* never the .so directly */
 }
 
-void test_debug_set_unforce_clears_forcing_flag(void)
+void test_debug_set_unforce_is_queued(void)
 {
     mock_debug_set_arr_count(1);
     mock_debug_set_elem_count(0, 4);
@@ -153,9 +159,9 @@ void test_debug_set_unforce_clears_forcing_flag(void)
     size_t len = process_debug_data(frame, 7);
     TEST_ASSERT_EQUAL_size_t(2, len);
 
-    const mock_debug_set_capture_t *cap = mock_debug_last_set();
+    const mock_external_write_capture_t *cap = mock_debug_last_external_write();
     TEST_ASSERT_TRUE(cap->called);
-    TEST_ASSERT_FALSE(cap->forcing);
+    TEST_ASSERT_EQUAL_UINT8(DBGW_OP_UNFORCE, cap->op);
     TEST_ASSERT_EQUAL_UINT16(0, cap->len);
 }
 
@@ -353,7 +359,16 @@ void test_debug_get_list_skips_oob_arr_entries(void)
  *  FC 0x45 — DEBUG_GET_MD5 (with endianness probe echo)
  * ======================================================================= */
 
-void test_debug_get_md5_returns_string_with_echo_bytes(void)
+/* The trailer is not an echo of the request: it is 0xDEAD stored in the
+ * target's own byte order, so the editor learns the target's endianness. */
+static uint16_t native_trailer(const uint8_t *p)
+{
+    uint16_t v;
+    memcpy(&v, p, sizeof v);
+    return v;
+}
+
+void test_debug_get_md5_returns_string_with_endianness_sentinel(void)
 {
     const char md5[] = "0123456789abcdef0123456789abcdef";
     mock_debug_set_md5(md5, 32, true);
@@ -364,12 +379,11 @@ void test_debug_get_md5_returns_string_with_echo_bytes(void)
 
     size_t len = process_debug_data(frame, 3);
 
-    /* Expected: [FC][STATUS][md5...32][echo hi][echo lo] = 36 bytes */
+    /* Expected: [FC][STATUS][md5...32][0xDEAD, native order] = 36 bytes */
     TEST_ASSERT_EQUAL_UINT8(MB_FC_DEBUG_GET_MD5, frame[0]);
     TEST_ASSERT_EQUAL_UINT8(MB_DEBUG_SUCCESS,    frame[1]);
     TEST_ASSERT_EQUAL_MEMORY(md5, &frame[2], 32);
-    TEST_ASSERT_EQUAL_UINT8(0xDE, frame[34]);
-    TEST_ASSERT_EQUAL_UINT8(0xAD, frame[35]);
+    TEST_ASSERT_EQUAL_HEX16(0xDEAD, native_trailer(&frame[34]));
     TEST_ASSERT_EQUAL_size_t(36, len);
 }
 
@@ -411,8 +425,7 @@ void test_debug_get_md5_bounds_unterminated_string(void)
     {
         TEST_ASSERT_EQUAL_UINT8('X', frame[2 + i]);
     }
-    TEST_ASSERT_EQUAL_UINT8(0x12, frame[34]);
-    TEST_ASSERT_EQUAL_UINT8(0x34, frame[35]);
+    TEST_ASSERT_EQUAL_HEX16(0xDEAD, native_trailer(&frame[34])); /* not the request's 0x1234 */
 }
 
 /* =======================================================================
@@ -421,7 +434,7 @@ void test_debug_get_md5_bounds_unterminated_string(void)
 
 void test_unknown_function_code_returns_zero_length(void)
 {
-    /* Any FC outside 0x41-0x45 should be rejected by the dispatcher. */
+    /* An FC the dispatcher does not know (0x41-0x45 and 0x4F are known). */
     frame[0] = 0xFF;
     size_t len = process_debug_data(frame, 1);
     TEST_ASSERT_EQUAL_size_t(0, len);
@@ -448,14 +461,13 @@ void test_get_list_zero_entries_returns_oob(void)
     TEST_ASSERT_EQUAL_size_t(2, len);
 }
 
-void test_get_unknown_status_propagated_from_so(void)
+void test_debug_set_queue_full_reports_out_of_memory(void)
 {
-    /* The runtime forwards whatever status byte the .so returns from
-     * debug_set, even if it's a non-canonical value — the editor
-     * decides how to surface it. */
+    /* The force is queued, so the .so's own status is not known yet; the
+     * answer says whether it was queued. A full queue is OUT_OF_MEMORY. */
     mock_debug_set_arr_count(1);
     mock_debug_set_elem_count(0, 1);
-    mock_debug_program_set_status(0xC1);  /* arbitrary non-success */
+    mock_debug_program_external_write_result(-1);
 
     frame[0] = MB_FC_DEBUG_SET;
     frame[1] = 0;
@@ -465,7 +477,7 @@ void test_get_unknown_status_propagated_from_so(void)
     frame[7] = 0xAA;
 
     size_t len = process_debug_data(frame, 8);
-    TEST_ASSERT_EQUAL_UINT8(0xC1, frame[1]);
+    TEST_ASSERT_EQUAL_UINT8(MB_DEBUG_ERROR_OUT_OF_MEMORY, frame[1]);
     TEST_ASSERT_EQUAL_size_t(2, len);
 }
 

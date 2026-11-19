@@ -11,6 +11,11 @@
 :paths:
   :test:
     - tests/**
+    # Not Ceedling tests: plain host executables (tests/host/run.sh), the
+    # lifecycle suite (a running plc_main) and the integration harness.
+    - -:tests/host/**
+    - -:tests/lifecycle/**
+    - -:tests/integration/**
   :source:
     - core/src/**
     - -:core/src/drivers/plugins/native/s7comm/** # Exclude s7comm to avoid duplicate cJSON.c
@@ -62,14 +67,12 @@
     uint32:   UINT32
     bool:     UINT8
 
-:flags:
-  :test:
-    :compile:
-      - -I/usr/include/python3.12 # From pkg-config --cflags-only-I python3-embed
+# The host's Python headers and libpython (plugin_driver.h includes Python.h)
+# come from python3-config, whatever its version: scripts/ceedling.sh writes them
+# to a mixin and runs Ceedling with it. Run the suite through that script.
 
 :libraries:
   :test:
-    - python3.12               # From pkg-config --libs python3-embed (Ceedling adds -l)
     - dl                       # Required by plugin_driver.c (Ceedling adds -l)
     - pthread                  # Required by plugin_driver.c (Ceedling adds -l)
 

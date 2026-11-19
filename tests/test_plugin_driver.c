@@ -3,6 +3,7 @@
 
 #include "plugin_config.h" // For plugin_config_t, etc.
 #include "plugin_driver.h"
+#include "debug_read_guard.h" // links debug_read_guard.c, which plugin_driver.c calls
 #include "unity.h"
 #include <pthread.h>
 #include <stdlib.h>
@@ -10,10 +11,8 @@
 
 // Simple mock control variables
 static int mock_calloc_should_fail          = 0;
-static int mock_init_rt_mutex_should_fail   = 0;
 static void *mock_calloc_return_value       = NULL;
 static int mock_calloc_call_count           = 0;
-static int mock_init_rt_mutex_call_count    = 0;
 static int mock_free_call_count             = 0;
 
 // Mock implementations - override the real functions
@@ -37,13 +36,6 @@ void *calloc(size_t num, size_t size)
     return ptr;
 }
 
-int init_rt_mutex(pthread_mutex_t *mutex)
-{
-    (void)mutex;
-    mock_init_rt_mutex_call_count++;
-    return mock_init_rt_mutex_should_fail ? -1 : 0;
-}
-
 void free(void *ptr)
 {
     mock_free_call_count++;
@@ -57,10 +49,8 @@ void free(void *ptr)
 void reset_mocks(void)
 {
     mock_calloc_should_fail          = 0;
-    mock_init_rt_mutex_should_fail   = 0;
     mock_calloc_return_value         = NULL;
     mock_calloc_call_count           = 0;
-    mock_init_rt_mutex_call_count    = 0;
     mock_free_call_count             = 0;
 }
 
@@ -94,10 +84,6 @@ void test_plugin_driver_create_ShouldAllocateAndInitializeDriver(void)
     // Verify that calloc was called
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, mock_calloc_call_count, "calloc should be called once");
 
-    // Verify that pthread_mutex_init was called
-    TEST_ASSERT_EQUAL_INT_MESSAGE(1, mock_init_rt_mutex_call_count,
-                                  "init_rt_mutex should be called once");
-
     // Verify internal state - all fields should be zero-initialized by calloc
     TEST_ASSERT_EQUAL_INT(0, driver->plugin_count);
 
@@ -119,32 +105,11 @@ void test_plugin_driver_create_CallocFails_ShouldReturnNULL(void)
 
     // Verify that calloc was called
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, mock_calloc_call_count, "calloc should be called once");
-
-    // Verify that pthread_mutex_init was NOT called (since calloc failed)
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, mock_init_rt_mutex_call_count,
-                                  "init_rt_mutex should not be called if calloc fails");
 }
 
-// Test Case 3: Test driver creation - mutex init failure
-void test_plugin_driver_create_MutexInitFails_ShouldFreeAndReturnNULL(void)
-{
-    // Setup: Configure pthread_mutex_init to fail
-    mock_init_rt_mutex_should_fail = 1;
-
-    // Call the function under test
-    plugin_driver_t *driver = plugin_driver_create();
-
-    // Assertions
-    TEST_ASSERT_NULL_MESSAGE(driver,
-                             "Driver creation should return NULL if init_rt_mutex fails");
-
-    // Verify that all expected functions were called
-    TEST_ASSERT_EQUAL_INT_MESSAGE(1, mock_calloc_call_count, "calloc should be called once");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(1, mock_init_rt_mutex_call_count,
-                                  "init_rt_mutex should be called once");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(
-        1, mock_free_call_count, "free should be called once to clean up after init_rt_mutex failure");
-}
+// The driver owns no mutex any more (buffer reads go through image_lock(),
+// writes through the lock-free journal), so creation has no step that can
+// fail after calloc.
 
 // Test Case 4: Test data structure manipulation (simplified)
 void test_plugin_driver_data_structure_ShouldStorePluginInfo(void)

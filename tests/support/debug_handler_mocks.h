@@ -55,6 +55,24 @@ void mock_debug_set_elem_count(uint8_t arr, uint16_t elem_count);
 void mock_debug_set_elem(uint8_t arr, uint16_t elem,
                          uint16_t size, const uint8_t *bytes);
 
+/* FC 0x42 does not call the .so: it queues on the debug-write journal
+ * (runtime_external_write), applied later at the no-task window. This is the
+ * most recent queued write. */
+typedef struct
+{
+    bool     called;
+    uint8_t  arr;
+    uint16_t elem;
+    uint8_t  op;     /* DBGW_OP_* */
+    uint8_t  bytes[MOCK_DEBUG_MAX_VARSIZE];
+    uint16_t len;
+} mock_external_write_capture_t;
+
+const mock_external_write_capture_t *mock_debug_last_external_write(void);
+
+/* runtime_external_write's return value: 0 queued, -1 queue full. */
+void mock_debug_program_external_write_result(int rc);
+
 /* Read out the most recent debug_set() / debug_write() invocation. */
 const mock_debug_set_capture_t *mock_debug_last_set(void);
 

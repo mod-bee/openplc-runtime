@@ -121,6 +121,28 @@ jobs:
             tests/pytest/plugins/test_vpp_license_delivery.py \
             tests/pytest/plugins/test_vpp_sibling_delivery.py
 
+  ceedling:
+    name: C unit tests (Ceedling)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      # python3-dev: plugin_driver.c embeds Python; scripts/ceedling.sh takes
+      # the flags from python3-config. Ceedling pinned to the version the suite
+      # was brought up on.
+      - name: Install Ceedling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-dev
+          gem install ceedling -v 1.2.2 --no-document
+
+      - name: ceedling test:all
+        run: ./scripts/ceedling.sh test:all
+
   shell:
     name: Installer scripts
     runs-on: ubuntu-latest

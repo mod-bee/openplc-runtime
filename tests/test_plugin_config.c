@@ -3,6 +3,7 @@
 
 #include "plugin_config.h"
 #include "plugin_driver.h"
+#include "debug_read_guard.h" // links debug_read_guard.c, which plugin_driver.c calls
 #include "unity.h"
 #include <string.h>
 
@@ -44,7 +45,7 @@ void test_parse_plugin_config_ValidFile_ShouldSucceed(void)
     const char *config_content =
         "# This is a comment\n"
         "\n" // Empty line
-        "plugin1,../path/to/plugin1.py,1,0,./config1.ini\n"
+        "plugin1,./path/to/plugin1.py,1,0,./config1.ini\n"
         "plugin2,./plugins/plugin2.so,0,1,./config2.conf\n"
         "plugin3,/another/path/plugin3.py,1,0,./config3.ini,/path/to/venv3\n";
 
@@ -59,7 +60,7 @@ void test_parse_plugin_config_ValidFile_ShouldSucceed(void)
 
     // Validate plugin1
     TEST_ASSERT_EQUAL_STRING("plugin1", configs[0].name);
-    TEST_ASSERT_EQUAL_STRING("../path/to/plugin1.py", configs[0].path);
+    TEST_ASSERT_EQUAL_STRING("./path/to/plugin1.py", configs[0].path);
     TEST_ASSERT_EQUAL_INT(1, configs[0].enabled);
     TEST_ASSERT_EQUAL_INT(PLUGIN_TYPE_PYTHON, configs[0].type); // 0 for Python from plugin_config.h
     TEST_ASSERT_EQUAL_STRING("./config1.ini", configs[0].plugin_related_config_path);
@@ -133,7 +134,7 @@ void test_parse_plugin_config_NonExistentFile_ShouldReturnNegative(void)
 void test_parse_plugin_config_MalformedLine_ShouldSkipLine(void)
 {
     const char *test_config_filename = "test_config_malformed.conf";
-    const char *config_content       = "plugin1,../path/to/plugin1.py,1,0,./config1.ini\n"
+    const char *config_content       = "plugin1,./path/to/plugin1.py,1,0,./config1.ini\n"
                                        "malformed_line\n" // This line should be skipped
                                  "plugin2,./plugins/plugin2.so,0,1,./config2.conf\n";
 

@@ -37,25 +37,36 @@ void    (*ext_strucpp_global_unlock)(uint32_t)                           = NULL;
  *
  * The first two live in utils.c and the third in debug_write_journal.cpp, and
  * no test target compiles any of those files -- so every link of a target that
- * pulls in debug_handler.c failed on undefined references. The whole Ceedling
- * suite has been unbuildable on development for that reason; the suite does
- * not run in CI, so nothing said so.
+ * pulls in debug_handler.c failed on undefined references.
  *
  * ext_strucpp_program_md5 is weak so the EtherCAT C tests, which do pull in
  * both this file and utils.c, link without a duplicate-symbol error. The write
- * stub accepts and drops -- nothing here asserts on the external-write queue. */
+ * stub records the queued write for the FC 0x42 tests. */
 __attribute__((weak)) char *ext_strucpp_program_md5 = NULL;
 unsigned long               scan_counter            = 0;
 
+static mock_external_write_capture_t g_last_external = {0};
+static int                           g_external_rc   = 0;
+
 int runtime_external_write(uint8_t arr, uint16_t elem, uint8_t op, const uint8_t *bytes, uint16_t len)
 {
-    (void)arr;
-    (void)elem;
-    (void)op;
-    (void)bytes;
-    (void)len;
-    return 0;
+    g_last_external.called = true;
+    g_last_external.arr    = arr;
+    g_last_external.elem   = elem;
+    g_last_external.op     = op;
+    g_last_external.len    = len;
+    if (bytes && len)
+        memcpy(g_last_external.bytes, bytes,
+               len < sizeof(g_last_external.bytes) ? len : sizeof(g_last_external.bytes));
+    return g_external_rc;
 }
+
+const mock_external_write_capture_t *mock_debug_last_external_write(void)
+{
+    return &g_last_external;
+}
+
+void mock_debug_program_external_write_result(int rc) { g_external_rc = rc; }
 
 /* -----------------------------------------------------------------------
  * State backing the fakes. Reset between tests.
@@ -159,6 +170,8 @@ void mock_debug_reset(void)
     memset(g_elems,        0, sizeof(g_elems));
     memset(&g_last_set,    0, sizeof(g_last_set));
     g_set_status = 0x7E;
+    memset(&g_last_external, 0, sizeof(g_last_external));
+    g_external_rc = 0;
     ext_strucpp_program_md5 = NULL;
     g_md5_ptr               = NULL;
     memset(g_md5_buf, 0, sizeof(g_md5_buf));

@@ -55,10 +55,8 @@ static IEC_ULINT *stub_lint_memory[STUB_IMAGE_ELEMENTS];
 //
 // TAKES THE SIZES STRUCT, not a single count. The signature moved
 // when the fourteen tables stopped sharing a length, and this stub kept the
-// old one -- so the C unit tests did not compile at all on this branch.
-// Nothing caught it because the Ceedling suite does not run in CI, and it
-// would not even configure until the SOEM submodule and its generated
-// ec_options.h were in place. Running it by hand is what surfaced this.
+// old one -- so the C unit tests did not compile at all. The suite now runs in
+// CI (the `ceedling` job), which catches a stub drifting from its signature.
 bool image_tables_alloc(const image_sizes_t *sizes)
 {
     (void)sizes;
@@ -180,4 +178,33 @@ void log_warn(const char *fmt, ...)
 void log_error(const char *fmt, ...)
 {
     (void)fmt;
+}
+
+// Stubs: what plugin_driver.c calls in modules these tests do not link
+// (image_tables.cpp, plc_state_manager.cpp, plugin_plc_requests.c,
+// vpp_plugin_seal.c, debug_write_journal.cpp). debug_read_guard.c is linked
+// for real by the tests that need it (they include debug_read_guard.h).
+#include "debug_write_journal.h"
+#include "plc_state_manager.h"
+#include "plugin_plc_requests.h"
+#include "vpp_plugin_seal.h"
+
+void image_lock(void) {}
+void image_unlock(void) {}
+
+PLCState plc_get_state(void) { return PLC_STATE_STOPPED; }
+
+void plugin_request_plc_stop(const char *reason) { (void)reason; }
+void plugin_request_plc_start(const char *reason) { (void)reason; }
+void plugin_set_switch_position(int position) { (void)position; }
+
+// No plugin in these tests is a VPP build artefact.
+int vpp_plugin_seal_required(const char *path) { (void)path; return 0; }
+int vpp_plugin_seal_verify(const char *path) { (void)path; return 0; }
+
+uint8_t runtime_external_write_text_units(uint8_t arr, uint16_t elem, const uint8_t *data,
+                                          uint16_t count)
+{
+    (void)arr; (void)elem; (void)data; (void)count;
+    return 0x83; // no program loaded
 }

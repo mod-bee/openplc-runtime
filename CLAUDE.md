@@ -73,9 +73,9 @@ sudo ./build/plc_main --print-logs
 # (including the suites CI skips; pytest.ini sets --maxfail=3)
 bash scripts/run-pytest.sh
 
-# C unit tests (Ceedling, project.yml, tests/test_*.c; needs Python 3.12 headers); coverage with gcov:all
-ceedling test:all
-ceedling gcov:all
+# C unit tests (Ceedling, project.yml, tests/test_*.c; Python 3 headers from python3-config); coverage with gcov:all
+./scripts/ceedling.sh test:all
+./scripts/ceedling.sh gcov:all
 
 # Runtime C++ that Ceedling does not reach (tests/host/test_*.cpp listed in its TESTS array, C++17);
 # needs python3 and the Python 3 dev headers (Python.h, via plugin_driver.h)
@@ -90,7 +90,8 @@ cd bootloader && test -z "$(gofmt -l .)" && go vet ./... && go test -race -count
   `modbus_master` and `modbus_slave` suites (red on the base branch), plus the named plugin suites known
   green; shellcheck on `install.sh`, `scripts/install-docker.sh`, `windows/provision-msys2.sh` and
   `tests/integration/harness.sh`; a check that Windows and Docker callers run `install.sh --native`.
-  Ceedling, `tests/host`, `tests/lifecycle` and `tests/integration` do not run in CI.
+  The Ceedling suite runs in CI (`ceedling` job, `scripts/ceedling.sh test:all`);
+  `tests/host`, `tests/lifecycle` and `tests/integration` do not.
 - End-to-end: a program deployed to the runtime and exercised over its protocols (e.g. Modbus) or from
   the editor/Edge. Existing suites: `tests/lifecycle/` (boots a real `plc_main` with a compiled program and
   drives it over the command socket, Linux or its container, see its README) and `tests/integration/`
